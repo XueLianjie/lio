@@ -66,7 +66,7 @@ bool staticInitialize() {
 void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   double imu_time_s = msg->header.stamp.toSec();
   ROS_INFO("imu time stamp: %f ", imu_time_s);
-
+  // cout << "imu time stamp: %f " << imu_time_s << endl;
   cout << "acc: \n " << msg->linear_acceleration << endl;
   cout << "gyro: \n " << msg->angular_velocity << endl;
 
@@ -95,11 +95,11 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     v_0 = Eigen::Vector3d(0, 6.28319, 3.14159);
     tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
     tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
-    
+
     // acc_0 = Eigen::Vector3d::Zero();
     // gyro_0 = Eigen::Vector3d::Zero();
     initialize_flag = true;
-    return;
+    // return;
   }
 
   double dt = 1.0 / 200.0;

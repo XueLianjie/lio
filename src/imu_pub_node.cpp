@@ -57,7 +57,7 @@ main(int argc, char** argv) {
     msg.angular_velocity.y = data.imu_gyro(1);
     msg.angular_velocity.z = data.imu_gyro(2);
 
-    // ROS_INFO("%d", msg.data);
+    ROS_INFO("pub msg time : %f", msg.header.stamp.toSec());
 
     imu_pub.publish(msg);
     //读取和更新ROS topics，如果没有spinonce()或spin()，节点不会发布消息。
