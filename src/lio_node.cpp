@@ -9,11 +9,14 @@
 #include <Eigen/SPQRSupport>
 #include <Eigen/SVD>
 #include <Eigen/SparseCore>
+#include <fstream>
 #include <iostream>
 #include <queue>
 #include <vector>
 
+#include "imu.h"
 #include "nav_msgs/Odometry.h"
+#include "param.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 
@@ -34,6 +37,8 @@ Eigen::Vector3d gravity_w(0, 0, -9.81);
 ros::Publisher odom_pub;
 ros::Publisher path_pub;
 nav_msgs::Path path;
+
+ofstream ofile;
 
 bool staticInitialize() {
   Eigen::Vector3d sum_acc = Eigen::Vector3d::Zero();
@@ -82,24 +87,47 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   //     }
   //   }
   // }
+  ofile << imu_time_s << " " << msg->orientation.w << " " << msg->orientation.x
+        << " " << msg->orientation.y << " " << msg->orientation.z << " " << 0
+        << " " << 0 << " " << 0 << " " << msg->angular_velocity.x << " "
+        << msg->angular_velocity.y << " " << msg->angular_velocity.z << " "
+        << msg->linear_acceleration.x << " " << msg->linear_acceleration.y
+        << " " << msg->linear_acceleration.z << " " << 0 << " " << 0 << " " << 0
+        << " " << 0 << " " << 0 << " " << 0 << " " << std::endl;
 
   if (!initialize_flag) {
-    q_0.x() = msg->orientation.x;
-    q_0.y() = msg->orientation.y;
-    q_0.z() = msg->orientation.z;
-    q_0.w() = msg->orientation.w;
+    Param params;
+    IMU imuGen(params);
+    MotionData data = imuGen.MotionModel(msg->orientation.x);
+     q_0 = Eigen::Quaterniond(data.Rwb);
+    // q_0.x() = q.x();
+    // q_0.y() = msg->orientation.y;
+    // q_0.z() = msg->orientation.z;
+    // q_0.w() = msg->orientation.w;
     bg_0 = Eigen::Vector3d::Zero();
 
     ba_0 = Eigen::Vector3d::Zero();
-    p_0 = Eigen::Vector3d(20, 5, 5);
-    v_0 = Eigen::Vector3d(0, 6.28319, 3.14159);
+    p_0 = data.twb;
+    v_0 = data.imu_velocity;
     tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
     tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
+
+    // q_0.x() = msg->orientation.x;
+    // q_0.y() = msg->orientation.y;
+    // q_0.z() = msg->orientation.z;
+    // q_0.w() = msg->orientation.w;
+    // bg_0 = Eigen::Vector3d::Zero();
+
+    // ba_0 = Eigen::Vector3d::Zero();
+    // p_0 = Eigen::Vector3d(20, 5, 5);
+    // v_0 = Eigen::Vector3d(0, 6.28319, 3.14159);
+    // tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
+    // tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
 
     // acc_0 = Eigen::Vector3d::Zero();
     // gyro_0 = Eigen::Vector3d::Zero();
     initialize_flag = true;
-    // return;
+    return;
   }
 
   double dt = 1.0 / 200.0;
@@ -167,6 +195,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 
 main(int argc, char** argv) {
   ros::init(argc, argv, "lio_node");
+  ofile.open("received_point.txt");
 
   ros::NodeHandle nh("~");
 
