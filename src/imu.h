@@ -9,6 +9,7 @@
 #include <eigen3/Eigen/Geometry>
 #include <iostream>
 #include <vector>
+#include <random>
 
 #include "param.h"
 
