@@ -21,8 +21,9 @@
 #include "sensor_msgs/Imu.h"
 
 using namespace std;
-
+#define GRAVITY_ACCELERATION 9.81
 #define MID_INTEGRATION
+//#define USE_SIM_DATA
 
 bool initialize_flag = false;
 vector<sensor_msgs::Imu> imuBuffer;
@@ -48,6 +49,8 @@ bool staticInitialize() {
   for (auto imu_msg : imuBuffer) {
     tf::vectorMsgToEigen(imu_msg.linear_acceleration, m_acc);
     tf::vectorMsgToEigen(imu_msg.angular_velocity, m_gyro);
+    m_acc *= GRAVITY_ACCELERATION;
+
     sum_acc += m_acc;
     sum_gyro += m_gyro;
   }
@@ -70,23 +73,10 @@ bool staticInitialize() {
 
 void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   double imu_time_s = msg->header.stamp.toSec();
-  ROS_INFO("imu time stamp: %f ", imu_time_s);
+  // ROS_INFO("imu time stamp: %f ", imu_time_s);
   // cout << "imu time stamp: %f " << imu_time_s << endl;
-  cout << "acc: \n " << msg->linear_acceleration << endl;
-  cout << "gyro: \n " << msg->angular_velocity << endl;
-
-  // if (!initialize_flag) {
-  //   imuBuffer.push_back(*msg);
-  //   if (imuBuffer.size() == CheckInitializeNum) {
-  //     if (!staticInitialize()) {
-  //       // imuBuffer.pop_front();
-  //       imuBuffer.erase(imuBuffer.begin());
-  //       return;
-  //     } else {
-  //       initialize_flag = true;
-  //     }
-  //   }
-  // }
+  // cout << "acc: \n " << msg->linear_acceleration << endl;
+  // cout << "gyro: \n " << msg->angular_velocity << endl;
 
   ofile << imu_time_s << " " << msg->orientation.w << " " << msg->orientation.x
         << " " << msg->orientation.y << " " << msg->orientation.z << " " << 0
@@ -95,16 +85,12 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
         << msg->linear_acceleration.x << " " << msg->linear_acceleration.y
         << " " << msg->linear_acceleration.z << " " << 0 << " " << 0 << " " << 0
         << " " << 0 << " " << 0 << " " << 0 << " " << std::endl;
-
+#ifdef USE_SIM_DATA
   if (!initialize_flag) {
     Param params;
     IMU imuGen(params);
     MotionData data = imuGen.MotionModel(msg->orientation.x);
     q_0 = Eigen::Quaterniond(data.Rwb);
-    // q_0.x() = q.x();
-    // q_0.y() = msg->orientation.y;
-    // q_0.z() = msg->orientation.z;
-    // q_0.w() = msg->orientation.w;
     bg_0 = Eigen::Vector3d::Zero();
 
     ba_0 = Eigen::Vector3d::Zero();
@@ -112,35 +98,43 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     v_0 = data.imu_velocity;
     tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
     tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
-
-    // q_0.x() = msg->orientation.x;
-    // q_0.y() = msg->orientation.y;
-    // q_0.z() = msg->orientation.z;
-    // q_0.w() = msg->orientation.w;
-    // bg_0 = Eigen::Vector3d::Zero();
-
-    // ba_0 = Eigen::Vector3d::Zero();
-    // p_0 = Eigen::Vector3d(20, 5, 5);
-    // v_0 = Eigen::Vector3d(0, 6.28319, 3.14159);
-    // tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
-    // tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
-
-    // acc_0 = Eigen::Vector3d::Zero();
-    // gyro_0 = Eigen::Vector3d::Zero();
     initialize_flag = true;
+
 #ifdef MID_INTEGRATION
     return;
 #endif
   }
+
+#else
+  if (!initialize_flag) {
+    imuBuffer.push_back(*msg);
+    if (imuBuffer.size() == CheckInitializeNum) {
+      if (!staticInitialize()) {
+        // imuBuffer.pop_front();
+        imuBuffer.erase(imuBuffer.begin());
+        return;
+
+      } else {
+        initialize_flag = true;
+#ifdef MID_INTEGRATION
+        return;
+#endif
+      }
+    }
+  }
+
+#endif
+
   double dt = 1.0 / 200.0;
   Eigen::Vector3d m_acc, m_gyro;
   tf::vectorMsgToEigen(msg->linear_acceleration, m_acc);
   tf::vectorMsgToEigen(msg->angular_velocity, m_gyro);
+  m_acc *= GRAVITY_ACCELERATION;
 
 #ifdef MID_INTEGRATION
 
   Eigen::Vector3d un_acc_0 = q_0 * acc_0 + gravity_w;
-  Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro);  // calculate average gyro
+  Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro) - bg_0;  // calculate average gyro
   Eigen::Quaterniond dq_tmp;
   dq_tmp.x() = un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
   dq_tmp.y() = un_gyro.y() * dt / 2.0;
@@ -209,10 +203,11 @@ main(int argc, char** argv) {
 
   odom_pub = nh.advertise<nav_msgs::Odometry>("odom", 1000);
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
-
+#ifdef USE_SIM_DATA
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
-
-  // ros::Rate rate(10);
+#else
+  ros::Subscriber imu_sub = nh.subscribe("/livox/imu", 1000, imuCallback);
+#endif
 
   ros::spin();
 
