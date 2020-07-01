@@ -22,7 +22,7 @@
 
 using namespace std;
 
-// void pub_odom(const sensor_msgs::)
+#define MID_INTEGRATION
 
 bool initialize_flag = false;
 vector<sensor_msgs::Imu> imuBuffer;
@@ -87,6 +87,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   //     }
   //   }
   // }
+
   ofile << imu_time_s << " " << msg->orientation.w << " " << msg->orientation.x
         << " " << msg->orientation.y << " " << msg->orientation.z << " " << 0
         << " " << 0 << " " << 0 << " " << msg->angular_velocity.x << " "
@@ -99,7 +100,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     Param params;
     IMU imuGen(params);
     MotionData data = imuGen.MotionModel(msg->orientation.x);
-     q_0 = Eigen::Quaterniond(data.Rwb);
+    q_0 = Eigen::Quaterniond(data.Rwb);
     // q_0.x() = q.x();
     // q_0.y() = msg->orientation.y;
     // q_0.z() = msg->orientation.z;
@@ -127,13 +128,35 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     // acc_0 = Eigen::Vector3d::Zero();
     // gyro_0 = Eigen::Vector3d::Zero();
     initialize_flag = true;
+#ifdef MID_INTEGRATION
     return;
+#endif
   }
-
   double dt = 1.0 / 200.0;
   Eigen::Vector3d m_acc, m_gyro;
   tf::vectorMsgToEigen(msg->linear_acceleration, m_acc);
   tf::vectorMsgToEigen(msg->angular_velocity, m_gyro);
+
+#ifdef MID_INTEGRATION
+
+  Eigen::Vector3d un_acc_0 = q_0 * acc_0 + gravity_w;
+  Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro);  // calculate average gyro
+  Eigen::Quaterniond dq_tmp;
+  dq_tmp.x() = un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
+  dq_tmp.y() = un_gyro.y() * dt / 2.0;
+  dq_tmp.z() = un_gyro.z() * dt / 2.0;
+  dq_tmp.w() = 1.0;
+  dq_tmp.normalize();
+  q_0 = q_0 * dq_tmp;
+  Eigen::Vector3d un_acc_1 = q_0 * m_acc + gravity_w;
+  Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
+  p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
+  v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
+  acc_0 = m_acc;
+  gyro_0 = m_gyro;
+
+#else
+
   // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
   Eigen::Quaterniond dq;
   Eigen::Vector3d dtheta_half = m_gyro * dt / 2.0;
@@ -141,30 +164,15 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   dq.x() = dtheta_half.x();
   dq.y() = dtheta_half.y();
   dq.z() = dtheta_half.z();
-
+  dq.normalize();
   //　imu 动力学模型　参考svo预积分论文
   Eigen::Vector3d acc_w =
       q_0 * (m_acc) + gravity_w;  // aw = Rwb * ( acc_body - acc_bias ) + gw
   q_0 = q_0 * dq;
-  v_0 = v_0 + acc_w * dt;
   p_0 = p_0 + v_0 * dt + 0.5 * dt * dt * acc_w;
+  v_0 = v_0 + acc_w * dt;
 
-  // Eigen::Vector3d un_acc_0 = q_0 * (acc_0 - ba_0) + gravity_w;
-  // Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro) - bg_0;
-  // Eigen::Quaterniond dq_tmp;
-  // dq_tmp.x() = un_gyro.x() * dt / 2.0;
-  // dq_tmp.y() = un_gyro.y() * dt / 2.0;
-  // dq_tmp.z() = un_gyro.z() * dt / 2.0;
-  // dq_tmp.w() = 1.0;
-  // dq_tmp.normalize();
-  // q_0 = q_0 * dq_tmp;
-  // Eigen::Vector3d un_acc_1 = q_0 * (m_acc - ba_0) + gravity_w;
-  // Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-  // p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
-  // v_0 = v_0 + dt * un_acc;
-  // acc_0 = m_acc;
-  // gyro_0 = m_gyro;
-
+#endif
   nav_msgs::Odometry odometry;
   odometry.header = msg->header;
   odometry.header.frame_id = "world";
