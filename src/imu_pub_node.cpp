@@ -1,4 +1,5 @@
 #include <Eigen/Core>
+#include <fstream>
 #include <iostream>
 
 #include "imu.h"
@@ -6,6 +7,7 @@
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 #include "utilities.h"
+
 using namespace std;
 
 main(int argc, char** argv) {
@@ -27,7 +29,11 @@ main(int argc, char** argv) {
   float t = params.t_start;
 
   double begin = ros::Time::now().toSec();
+  std::ofstream save_points;
+  std::string str = "published_points.txt";
+  save_points.open(str.c_str());
 
+  // save_points.open(str.c_str());
   while (ros::ok()) {
     ros::Time time_now(begin + t);
 
@@ -44,7 +50,7 @@ main(int argc, char** argv) {
 
     Eigen::Quaterniond q(data.Rwb);
     //四元数位姿
-    msg.orientation.x = q.x();
+    msg.orientation.x = t;//q.x();
     msg.orientation.y = q.y();
     msg.orientation.z = q.z();
     msg.orientation.w = q.w();
@@ -58,6 +64,27 @@ main(int argc, char** argv) {
     msg.angular_velocity.z = data.imu_gyro(2);
 
     ROS_INFO("pub msg time : %f", msg.header.stamp.toSec());
+        save_points << t << " "
+                    << q.w() << " "
+                    << q.x() << " "
+                    << q.y() << " "
+                    << q.z() << " "
+                    << data.twb(0) << " "
+                    << data.twb(1) << " "
+                    << data.twb(2) << " "
+                    << data.imu_gyro(0) << " "
+                    << data.imu_gyro(1) << " "
+                    << data.imu_gyro(2) << " "
+                    << data.imu_acc(0) << " "
+                    << data.imu_acc(1) << " "
+                    << data.imu_acc(2) << " "
+                    << 0 << " "
+                    << 0 << " "
+                    << 0 << " "
+                    << 0 << " "
+                    << 0 << " "
+                    << 0 << " "
+                    << std::endl;
 
     imu_pub.publish(msg);
     //读取和更新ROS topics，如果没有spinonce()或spin()，节点不会发布消息。
