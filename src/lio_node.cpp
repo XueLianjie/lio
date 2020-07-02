@@ -21,19 +21,19 @@
 #include "sensor_msgs/Imu.h"
 
 using namespace std;
-#define GRAVITY_ACCELERATION 9.81
+#define GRAVITY_ACCELERATION 1
 #define MID_INTEGRATION
 //#define USE_SIM_DATA
 
 bool initialize_flag = false;
 vector<sensor_msgs::Imu> imuBuffer;
-const int CheckInitializeNum = 20;
-
+const int CheckInitializeNum = 200;
+double last_time;
 // state variables
 Eigen::Quaterniond q_wi;
 Eigen::Vector3d p_0, v_0, ba_0, bg_0, acc_0, gyro_0;
 Eigen::Quaterniond q_0;
-Eigen::Vector3d gravity_w(0, 0, -9.81);
+Eigen::Vector3d gravity_w(0, 0, -GRAVITY_ACCELERATION);
 
 ros::Publisher odom_pub;
 ros::Publisher path_pub;
@@ -61,8 +61,11 @@ bool staticInitialize() {
   double gravity_norm = gravity_imu.norm();
   gravity_w = Eigen::Vector3d(0.0, 0.0,
                               -gravity_norm);  // gravity or acc in world fram ?
-
+  cout << "gravity imu " << gravity_imu << endl;
+  cout << "gravity w " << gravity_w << endl;
   q_0 = Eigen::Quaterniond::FromTwoVectors(gravity_imu, -gravity_w);
+  Eigen::Matrix3d Rwb(q_0);
+  cout << "Rwb " << Rwb << endl;
   ba_0 = Eigen::Vector3d::Zero();
   p_0 = Eigen::Vector3d::Zero();
   v_0 = Eigen::Vector3d::Zero();
@@ -116,21 +119,28 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 
       } else {
         initialize_flag = true;
+
 #ifdef MID_INTEGRATION
+        last_time = msg->header.stamp.toSec();
         return;
 #endif
       }
+    } else {
+      return;
     }
   }
 
 #endif
-
-  double dt = 1.0 / 200.0;
+  double dt = msg->header.stamp.toSec() - last_time;
+  //cout << "dt " << dt << endl;
+  assert(dt < 0.01);
+  last_time = msg->header.stamp.toSec();
+  //double dt = 1.0 / 200.0;
   Eigen::Vector3d m_acc, m_gyro;
   tf::vectorMsgToEigen(msg->linear_acceleration, m_acc);
   tf::vectorMsgToEigen(msg->angular_velocity, m_gyro);
   m_acc *= GRAVITY_ACCELERATION;
-
+  //cout << "m_cc norm " << m_acc << endl;
 #ifdef MID_INTEGRATION
 
   Eigen::Vector3d un_acc_0 = q_0 * acc_0 + gravity_w;
@@ -144,6 +154,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   q_0 = q_0 * dq_tmp;
   Eigen::Vector3d un_acc_1 = q_0 * m_acc + gravity_w;
   Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
+  cout << "un_acc " << un_acc << endl;
   p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
   v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
   acc_0 = m_acc;
@@ -173,10 +184,15 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   odometry.pose.pose.position.x = p_0.x();
   odometry.pose.pose.position.y = p_0.y();
   odometry.pose.pose.position.z = p_0.z();
-  odometry.pose.pose.orientation.x = q_0.x();
-  odometry.pose.pose.orientation.y = q_0.y();
-  odometry.pose.pose.orientation.z = q_0.z();
-  odometry.pose.pose.orientation.w = q_0.w();
+  // this is for visualization of rviz axis
+  Eigen::Matrix3d Rzx;
+  Rzx << 0, 0, -1, 0, 1, 0, 1, 0, 0;
+  Eigen::Quaterniond q0(Rzx);
+  q0 = q0 * q_0;
+  odometry.pose.pose.orientation.x = q0.x();
+  odometry.pose.pose.orientation.y = q0.y();
+  odometry.pose.pose.orientation.z = q0.z();
+  odometry.pose.pose.orientation.w = q0.w();
   odometry.twist.twist.linear.x = v_0.x();
   odometry.twist.twist.linear.y = v_0.y();
   odometry.twist.twist.linear.z = v_0.z();
@@ -206,7 +222,7 @@ main(int argc, char** argv) {
 #ifdef USE_SIM_DATA
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
 #else
-  ros::Subscriber imu_sub = nh.subscribe("/livox/imu", 1000, imuCallback);
+  ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
 #endif
 
   ros::spin();
