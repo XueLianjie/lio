@@ -60,6 +60,7 @@
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
   <depend>std_srvs</depend>
+  <depend>livox_ros_driver</depend>
   
   <build_depend>roscpp</build_depend>
   <build_depend>rospy</build_depend>

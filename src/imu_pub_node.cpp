@@ -39,7 +39,7 @@ main(int argc, char** argv) {
     ros::Time time_now(begin + t);
 
     msg.header.stamp = time_now;
-    msg.header.frame_id = "world";
+    msg.header.frame_id = "livox";
     MotionData data = imuGen.MotionModel(t);
 
     Eigen::Quaterniond q(data.Rwb);
@@ -53,10 +53,10 @@ main(int argc, char** argv) {
     pose.orientation.w = q.w();
     geometry_msgs::PoseStamped pose_stamped;
     pose_stamped.header = msg.header;
-    pose_stamped.header.frame_id = "world";
+    pose_stamped.header.frame_id = "livox";
     pose_stamped.pose = pose;
     path_gt_msg.header.stamp = time_now;
-    path_gt_msg.header.frame_id = "world";
+    path_gt_msg.header.frame_id = "livox";
     path_gt_msg.poses.push_back(pose_stamped);
 
     //Eigen::Quaterniond q(data.Rwb);

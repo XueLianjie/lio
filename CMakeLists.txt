@@ -20,8 +20,11 @@ find_package(catkin REQUIRED COMPONENTS
   eigen_conversions
   tf_conversions
   tf
+  livox_ros_driver
+
 )
 find_package(Boost REQUIRED)
+find_package(PCL REQUIRED)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -124,7 +127,7 @@ catkin_package(
     roscpp std_msgs tf nav_msgs sensor_msgs geometry_msgs
     eigen_conversions tf_conversions random_numbers message_runtime
     image_transport cv_bridge message_filters pcl_conversions
-    pcl_ros std_srvs
+    pcl_ros std_srvs livox_ros_driver 
   DEPENDS Boost EIGEN3 OpenCV SUITESPARSE
 )
 
@@ -140,6 +143,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${OpenCV_INCLUDE_DIRS}
   ${SUITESPARSE_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
 
 )
 
@@ -156,6 +160,10 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
+add_executable(livox_repub_node src/livox_repub.cpp)
+target_link_libraries(livox_repub_node ${catkin_LIBRARIES})
+
+
 add_executable(${PROJECT_NAME}_node src/lio_node.cpp
 src/imu.cpp
 src/utilities.cpp
@@ -181,6 +189,7 @@ add_executable(imu_pub_node src/imu_pub_node.cpp
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
 )
 
 target_link_libraries(imu_pub_node

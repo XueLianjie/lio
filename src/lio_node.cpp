@@ -14,6 +14,7 @@
 #include <queue>
 #include <vector>
 
+#include <sensor_msgs/PointCloud2.h>
 #include "imu.h"
 #include "nav_msgs/Odometry.h"
 #include "param.h"
@@ -60,7 +61,7 @@ bool staticInitialize() {
 
   double gravity_norm = gravity_imu.norm();
   gravity_w = Eigen::Vector3d(0.0, 0.0,
-                              -gravity_norm);  // gravity or acc in world fram ?
+                              -gravity_norm);  // gravity or acc in livox fram ?
   cout << "gravity imu " << gravity_imu << endl;
   cout << "gravity w " << gravity_w << endl;
   q_0 = Eigen::Quaterniond::FromTwoVectors(gravity_imu, -gravity_w);
@@ -75,6 +76,8 @@ bool staticInitialize() {
 }
 
 void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
+  ROS_INFO(" get imu data ... %f ", msg->header.stamp.toSec());
+
   double imu_time_s = msg->header.stamp.toSec();
   // ROS_INFO("imu time stamp: %f ", imu_time_s);
   // cout << "imu time stamp: %f " << imu_time_s << endl;
@@ -133,7 +136,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 #endif
   double dt = msg->header.stamp.toSec() - last_time;
   //cout << "dt " << dt << endl;
-  assert(dt < 0.01);
+  assert(dt < 0.02);
   last_time = msg->header.stamp.toSec();
   //double dt = 1.0 / 200.0;
   Eigen::Vector3d m_acc, m_gyro;
@@ -154,7 +157,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   q_0 = q_0 * dq_tmp;
   Eigen::Vector3d un_acc_1 = q_0 * m_acc + gravity_w;
   Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-  cout << "un_acc " << un_acc << endl;
+  //cout << "un_acc " << un_acc << endl;
   p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
   v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
   acc_0 = m_acc;
@@ -180,7 +183,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 #endif
   nav_msgs::Odometry odometry;
   odometry.header = msg->header;
-  odometry.header.frame_id = "world";
+  odometry.header.frame_id = "livox";
   odometry.pose.pose.position.x = p_0.x();
   odometry.pose.pose.position.y = p_0.y();
   odometry.pose.pose.position.z = p_0.z();
@@ -200,15 +203,76 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 
   geometry_msgs::PoseStamped pose_stamped;
   pose_stamped.header = msg->header;
-  pose_stamped.header.frame_id = "world";
+  pose_stamped.header.frame_id = "livox";
   pose_stamped.pose = odometry.pose.pose;
 
   path.header = msg->header;
-  path.header.frame_id = "world";
+  path.header.frame_id = "livox";
   path.poses.push_back(pose_stamped);
   path_pub.publish(path);
 
   return;
+}
+
+bool lidarOdometry() {
+  return true;
+}
+
+bool updateState() {
+  return true;
+}
+
+bool undistortPointCloud(const sensor_msgs::PointCloud2::ConstPtr& lidar_msg) {
+  // TODO: undistort point cloud method
+
+  void ::UndistortPcl(const PointCloudXYZI::Ptr &pcl_in_out,
+                                double dt_be, const Sophus::SE3d &Tbe) {
+    const Eigen::Vector3d &tbe = Tbe.translation();
+    Eigen::Vector3d rso3_be = Tbe.so3().log();
+    for (auto &pt : pcl_in_out->points) {
+      int ring = int(pt.intensity);
+      float dt_bi = pt.intensity - ring;
+
+      if (dt_bi == 0) laserCloudtmp->push_back(pt);
+      double ratio_bi = dt_bi / dt_be;
+      /// Rotation from i-e
+      double ratio_ie = 1 - ratio_bi;
+
+      Eigen::Vector3d rso3_ie = ratio_ie * rso3_be;
+      SO3d Rie = SO3d::exp(rso3_ie);
+
+      /// Transform to the 'end' frame, using only the rotation
+      /// Note: Compensation direction is INVERSE of Frame's moving direction
+      /// So if we want to compensate a point at timestamp-i to the frame-e
+      /// P_compensate = R_ei * Pi + t_ei
+      Eigen::Vector3d tie = ratio_ie * tbe;
+      // Eigen::Vector3d tei = Eigen::Vector3d::Zero();
+      Eigen::Vector3d v_pt_i(pt.x, pt.y, pt.z);
+      Eigen::Vector3d v_pt_comp_e = Rie.inverse() * (v_pt_i - tie);
+
+      /// Undistorted point
+      pt.x = v_pt_comp_e.x();
+      pt.y = v_pt_comp_e.y();
+      pt.z = v_pt_comp_e.z();
+    }
+  }
+
+  return true;
+}
+
+void lidarCallback(const sensor_msgs::PointCloud2::ConstPtr& lidar_msg) {
+  ROS_INFO(" get lidar data ... %f ", lidar_msg->header.stamp.toSec());
+  if (!initialize_flag)
+    return;
+
+  if (!undistortPointCloud(lidar_msg)) {
+    ROS_ERROR("distort point cloud error");
+    exit(1);
+  }
+
+  lidarOdometry();
+
+  updateState();
 }
 
 main(int argc, char** argv) {
@@ -225,6 +289,7 @@ main(int argc, char** argv) {
   ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
 #else
   ros::Subscriber imu_sub = nh.subscribe("/livox/imu", 1000, imuCallback);
+  ros::Subscriber point_cloud_sub = nh.subscribe("/livox/lidar_cloud", 1000, lidarCallback);
 #endif
 
   ros::spin();
