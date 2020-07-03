@@ -21,7 +21,7 @@
 #include "sensor_msgs/Imu.h"
 
 using namespace std;
-#define GRAVITY_ACCELERATION 1
+#define GRAVITY_ACCELERATION 9.81
 #define MID_INTEGRATION
 //#define USE_SIM_DATA
 
@@ -221,8 +221,10 @@ main(int argc, char** argv) {
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
 #ifdef USE_SIM_DATA
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
-#else
+#elif USE_EUROC_DATA
   ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
+#else
+  ros::Subscriber imu_sub = nh.subscribe("/livox/imu", 1000, imuCallback);
 #endif
 
   ros::spin();
