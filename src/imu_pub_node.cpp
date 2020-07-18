@@ -41,6 +41,7 @@ main(int argc, char** argv) {
     msg.header.stamp = time_now;
     msg.header.frame_id = "world";
     MotionData data = imuGen.MotionModel(t);
+    imuGen.addIMUnoise(data);
 
     Eigen::Quaterniond q(data.Rwb);
     geometry_msgs::Pose pose;
@@ -59,9 +60,9 @@ main(int argc, char** argv) {
     path_gt_msg.header.frame_id = "world";
     path_gt_msg.poses.push_back(pose_stamped);
 
-    //Eigen::Quaterniond q(data.Rwb);
+    // Eigen::Quaterniond q(data.Rwb);
     //四元数位姿
-    msg.orientation.x = t;  //q.x();
+    msg.orientation.x = t;  // q.x();
     msg.orientation.y = q.y();
     msg.orientation.z = q.z();
     msg.orientation.w = q.w();
@@ -75,27 +76,13 @@ main(int argc, char** argv) {
     msg.angular_velocity.z = data.imu_gyro(2);
 
     ROS_INFO("pub msg time : %f", msg.header.stamp.toSec());
-    save_points << t << " "
-                << q.w() << " "
-                << q.x() << " "
-                << q.y() << " "
-                << q.z() << " "
-                << data.twb(0) << " "
-                << data.twb(1) << " "
-                << data.twb(2) << " "
-                << data.imu_gyro(0) << " "
-                << data.imu_gyro(1) << " "
-                << data.imu_gyro(2) << " "
-                << data.imu_acc(0) << " "
-                << data.imu_acc(1) << " "
-                << data.imu_acc(2) << " "
-                << 0 << " "
-                << 0 << " "
-                << 0 << " "
-                << 0 << " "
-                << 0 << " "
-                << 0 << " "
-                << std::endl;
+    save_points << t << " " << q.w() << " " << q.x() << " " << q.y() << " "
+                << q.z() << " " << data.twb(0) << " " << data.twb(1) << " "
+                << data.twb(2) << " " << data.imu_gyro(0) << " "
+                << data.imu_gyro(1) << " " << data.imu_gyro(2) << " "
+                << data.imu_acc(0) << " " << data.imu_acc(1) << " "
+                << data.imu_acc(2) << " " << 0 << " " << 0 << " " << 0 << " "
+                << 0 << " " << 0 << " " << 0 << " " << std::endl;
 
     imu_pub.publish(msg);
     gt_pub.publish(path_gt_msg);
