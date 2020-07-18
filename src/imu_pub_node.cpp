@@ -7,6 +7,7 @@
 #include "param.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
+#include "sensor_msgs/NavSatFix.h"
 #include "utilities.h"
 using namespace std;
 
@@ -17,6 +18,9 @@ main(int argc, char** argv) {
 
   ros::Publisher imu_pub = nh.advertise<sensor_msgs::Imu>("/imu_sim", 1000);
   ros::Publisher gt_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
+  ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("gps", 1000);
+  ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
+
   // ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
 
   ros::Rate loop_rate(200);
@@ -25,6 +29,9 @@ main(int argc, char** argv) {
   IMU imuGen(params);
   sensor_msgs::Imu msg;
   nav_msgs::Path path_gt_msg;
+  nav_msgs::Path path_gps_msg;
+  sensor_msgs::NavSatFix gps;
+  int gps_count = 0;
 
   //当按Ctrl+C时，ros::ok()会返回0，退出该while循环，。
   float t = params.t_start;
@@ -40,8 +47,10 @@ main(int argc, char** argv) {
 
     msg.header.stamp = time_now;
     msg.header.frame_id = "world";
+    gps.header.stamp = time_now;
+    gps.header.frame_id = "world";
+
     MotionData data = imuGen.MotionModel(t);
-    imuGen.addIMUnoise(data);
 
     Eigen::Quaterniond q(data.Rwb);
     geometry_msgs::Pose pose;
@@ -59,6 +68,8 @@ main(int argc, char** argv) {
     path_gt_msg.header.stamp = time_now;
     path_gt_msg.header.frame_id = "world";
     path_gt_msg.poses.push_back(pose_stamped);
+
+    imuGen.addIMUnoise(data);
 
     // Eigen::Quaterniond q(data.Rwb);
     //四元数位姿
@@ -86,6 +97,26 @@ main(int argc, char** argv) {
 
     imu_pub.publish(msg);
     gt_pub.publish(path_gt_msg);
+
+    gps_count++;
+    if (gps_count == params.imu_frequency) {
+      // gps data
+      gps.latitude = data.twb(0);
+      gps.longitude = data.twb(1);
+      gps.altitude = data.twb(2);
+
+      pose.position.x = data.twb(0);
+      pose.position.y = data.twb(1);
+      pose.position.z = data.twb(2);
+      pose_stamped.pose = pose;
+      path_gps_msg.header.stamp = time_now;
+      path_gps_msg.header.frame_id = "world";
+      path_gps_msg.poses.push_back(pose_stamped);
+      gps_pub.publish(gps);
+      gps_path_pub.publish(path_gps_msg);
+      gps_count = 0;
+    }
+
     //读取和更新ROS topics，如果没有spinonce()或spin()，节点不会发布消息。
     ros::spinOnce();
 
