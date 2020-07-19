@@ -42,8 +42,8 @@ double IMUState::gyro_noise = 0.001;
 double IMUState::acc_noise = 0.01;
 double IMUState::gyro_bias_noise = 0.001;
 double IMUState::acc_bias_noise = 0.01;
-Vector3d IMUState::gravity = Vector3d(0, 0, -GRAVITY_ACCELERATION);
-Isometry3d IMUState::T_imu_body = Isometry::Identity();
+Eigen::Vector3d IMUState::gravity = Eigen::Vector3d(0, 0, -GRAVITY_ACCELERATION);
+Eigen::Isometry3d IMUState::T_imu_body = Eigen::Isometry3d::Identity();
 
 
 
