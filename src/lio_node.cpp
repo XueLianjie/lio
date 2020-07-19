@@ -19,6 +19,8 @@
 #include "param.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
+#include "sensor_msgs/NavSatFix.h"
+#include "imu_state.h"
 
 using namespace std;
 
@@ -33,6 +35,17 @@ Eigen::Quaterniond q_wi;
 Eigen::Vector3d p_0, v_0, ba_0, bg_0, acc_0, gyro_0;
 Eigen::Quaterniond q_0;
 Eigen::Vector3d gravity_w(0, 0, -9.81);
+//IMUState imu_state;
+
+StateIDType IMUState::next_id = 0;
+double IMUState::gyro_noise = 0.001;
+double IMUState::acc_noise = 0.01;
+double IMUState::gyro_bias_noise = 0.001;
+double IMUState::acc_bias_noise = 0.01;
+Vector3d IMUState::gravity = Vector3d(0, 0, -GRAVITY_ACCELERATION);
+Isometry3d IMUState::T_imu_body = Isometry::Identity();
+
+
 
 ros::Publisher odom_pub;
 ros::Publisher path_pub;
@@ -201,6 +214,13 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   return;
 }
 
+void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg)
+{
+  ROS_INFO("gps data received %f, %f, %f", gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
+
+
+}
+
 main(int argc, char** argv) {
   ros::init(argc, argv, "lio_node");
   ofile.open("received_point.txt");
@@ -211,6 +231,7 @@ main(int argc, char** argv) {
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
 
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
+  ros::Subscriber gps_sub = nh.subscribe("/gps", 100, gpsCallback);
 
   // ros::Rate rate(10);
 

@@ -18,7 +18,7 @@ main(int argc, char** argv) {
 
   ros::Publisher imu_pub = nh.advertise<sensor_msgs::Imu>("/imu_sim", 1000);
   ros::Publisher gt_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
-  ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("gps", 1000);
+  ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("/gps", 1000);
   ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
 
   // ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
