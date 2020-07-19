@@ -15,12 +15,12 @@
 #include <vector>
 
 #include "imu.h"
+#include "imu_state.h"
 #include "nav_msgs/Odometry.h"
 #include "param.h"
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
 #include "sensor_msgs/NavSatFix.h"
-#include "imu_state.h"
 
 using namespace std;
 
@@ -35,17 +35,16 @@ Eigen::Quaterniond q_wi;
 Eigen::Vector3d p_0, v_0, ba_0, bg_0, acc_0, gyro_0;
 Eigen::Quaterniond q_0;
 Eigen::Vector3d gravity_w(0, 0, -9.81);
-//IMUState imu_state;
+// IMUState imu_state;
 
 StateIDType IMUState::next_id = 0;
 double IMUState::gyro_noise = 0.001;
 double IMUState::acc_noise = 0.01;
 double IMUState::gyro_bias_noise = 0.001;
 double IMUState::acc_bias_noise = 0.01;
-Eigen::Vector3d IMUState::gravity = Eigen::Vector3d(0, 0, -GRAVITY_ACCELERATION);
+Eigen::Vector3d IMUState::gravity =
+    Eigen::Vector3d(0, 0, -GRAVITY_ACCELERATION);
 Eigen::Isometry3d IMUState::T_imu_body = Eigen::Isometry3d::Identity();
-
-
 
 ros::Publisher odom_pub;
 ros::Publisher path_pub;
@@ -152,19 +151,23 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 
 #ifdef MID_INTEGRATION
 
-  Eigen::Vector3d un_acc_0 = q_0 * acc_0 + gravity_w;
-  Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro);  // calculate average gyro
+  Eigen::Vector3d un_acc_0 = q_0 * (acc_0 - ba_0) + gravity_w;
+  Eigen::Vector3d un_gyro =
+      0.5 * (gyro_0 + m_gyro) - bg_0;  // calculate average gyro
   Eigen::Quaterniond dq_tmp;
-  dq_tmp.x() = un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
+  dq_tmp.x() =
+      un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
   dq_tmp.y() = un_gyro.y() * dt / 2.0;
   dq_tmp.z() = un_gyro.z() * dt / 2.0;
   dq_tmp.w() = 1.0;
   dq_tmp.normalize();
   q_0 = q_0 * dq_tmp;
-  Eigen::Vector3d un_acc_1 = q_0 * m_acc + gravity_w;
+  Eigen::Vector3d un_acc_1 = q_0 * (m_acc - ba_0) + gravity_w;
   Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
   p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
   v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
+  // ba_0 = ba_0;
+  // bg_0 = bg_0;
   acc_0 = m_acc;
   gyro_0 = m_gyro;
 
@@ -214,11 +217,9 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   return;
 }
 
-void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg)
-{
-  ROS_INFO("gps data received %f, %f, %f", gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
-
-
+void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
+  ROS_INFO("gps data received %f, %f, %f", gps_msg->latitude,
+           gps_msg->longitude, gps_msg->altitude);
 }
 
 main(int argc, char** argv) {
