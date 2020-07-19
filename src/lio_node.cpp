@@ -290,8 +290,7 @@ void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
 
   if (delta_x.block<3, 1>(6, 0).norm() > 1e-12) {
     q_0 *= Eigen::Quaterniond(
-        Eigen::
-        (delta_x.block<3, 1>(6, 0).norm(),
+        Eigen::AngleAxisd(delta_x.block<3, 1>(6, 0).norm(),
                           delta_x.block<3, 1>(6, 0).normalized())
             .toRotationMatrix());
   }
