@@ -31,7 +31,7 @@ main(int argc, char** argv) {
   nav_msgs::Path path_gt_msg;
   nav_msgs::Path path_gps_msg;
   sensor_msgs::NavSatFix gps;
-  gps.position_covariance = {0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01};
+  gps.position_covariance = {0.0001, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0001};
 
   int gps_count = 0;
 
@@ -100,7 +100,7 @@ main(int argc, char** argv) {
     imu_pub.publish(msg);
     gt_pub.publish(path_gt_msg);
 
-    gps_count++;
+    gps_count+= 10;
     if (gps_count == params.imu_frequency) {
       // gps data
       gps.latitude = data.twb(0);

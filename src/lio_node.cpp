@@ -147,8 +147,10 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     // acc_0 = Eigen::Vector3d::Zero();
     // gyro_0 = Eigen::Vector3d::Zero();
     initialize_flag = true;
-
-    CovX.block<3, 3>(6, 6) = 0.01 * Eigen::Matrix3d::Identity();
+    CovX = Eigen::Matrix<double, 15, 15>::Identity();
+    CovX.block<3, 3>(0, 0) = 100. * Eigen::Matrix3d::Identity();
+    CovX.block<3, 3>(3, 3) = 100. * Eigen::Matrix3d::Identity();
+    CovX.block<3, 3>(6, 6) = 1.0 * Eigen::Matrix3d::Identity();
     CovX.block<3, 3>(9, 9) = 0.0001 * Eigen::Matrix3d::Identity();
     CovX.block<3, 3>(12, 12) = 0.0001 * Eigen::Matrix3d::Identity();
 
@@ -187,32 +189,35 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   Eigen::Matrix3d R(q_0);
   Eigen::Matrix<double, 15, 15> Fx = Eigen::Matrix<double, 15, 15>::Identity();
   Fx.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity() * dt;
-  Fx.block<3, 3>(3, 6) = -R * toSkewMatrix(un_acc) * dt;
+  Fx.block<3, 3>(3, 6) = -R * toSkewMatrix(un_acc - gravity_w) * dt;
   Fx.block<3, 3>(3, 9) = -R * dt;
   Eigen::Vector3d delta_theta = un_gyro * dt;
-  if(delta_theta.norm() > 1e-12)
-  {
-    Fx.block<3, 3>(6, 6) = Eigen::AngleAxisd(delta_theta.norm(), delta_theta.normalized()).toRotationMatrix().transpose();
-  }
-  else
-  {
+  if (delta_theta.norm() > 1e-12) {
+    Fx.block<3, 3>(6, 6) =
+        Eigen::AngleAxisd(delta_theta.norm(), delta_theta.normalized())
+            .toRotationMatrix()
+            .transpose();
+  } else {
     Fx.block<3, 3>(6, 6) = Eigen::Matrix3d::Identity();
   }
-  
-  //Fx.block<3, 3>(6, 6) = Eigen::Matrix3d(un_gyro * dt).transpose();
+
+  // Fx.block<3, 3>(6, 6) = Eigen::Matrix3d(un_gyro * dt).transpose();
   Fx.block<3, 3>(6, 12) = -Eigen::Matrix3d::Identity() * dt;
 
   Eigen::Matrix<double, 15, 12> Fi = Eigen::Matrix<double, 15, 12>::Zero();
   Fi.block<12, 12>(3, 0) = Eigen::Matrix<double, 12, 12>::Identity();
 
   Eigen::Matrix<double, 12, 12> Qi = Eigen::Matrix<double, 12, 12>::Zero();
-  Qi.block<3, 3>(0, 0) = dt * dt * IMUState::acc_noise * Eigen::Matrix3d::Identity();
-  Qi.block<3, 3>(3, 3) = dt * dt * IMUState::gyro_noise * Eigen::Matrix3d::Identity();
-  Qi.block<3, 3>(6, 6) = dt * IMUState::acc_bias_noise * Eigen::Matrix3d::Identity();
-  Qi.block<3, 3>(9, 9) = dt * IMUState::gyro_bias_noise * Eigen::Matrix3d::Identity();
+  Qi.block<3, 3>(0, 0) =
+      dt * dt * IMUState::acc_noise * Eigen::Matrix3d::Identity();
+  Qi.block<3, 3>(3, 3) =
+      dt * dt * IMUState::gyro_noise * Eigen::Matrix3d::Identity();
+  Qi.block<3, 3>(6, 6) =
+      dt * IMUState::acc_bias_noise * Eigen::Matrix3d::Identity();
+  Qi.block<3, 3>(9, 9) =
+      dt * IMUState::gyro_bias_noise * Eigen::Matrix3d::Identity();
 
   CovX = Fx * CovX * Fx.transpose() + Fi * Qi * Fi.transpose();
-
 
 #else
 
@@ -261,37 +266,48 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 }
 
 void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
-  ROS_INFO("gps data received %f, %f, %f", gps_msg->latitude,
+  ROS_INFO("gps timestamp %f,  %f, %f, %f", gps_msg->header.stamp.toSec(), gps_msg->latitude,
            gps_msg->longitude, gps_msg->altitude);
 
   Eigen::Vector3d gps(gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
-  Eigen::Matrix<double, 3, 15> Hx = Eigen::Matrix<double, 3, 15>::Zero(); 
+  Eigen::Matrix<double, 3, 15> Hx = Eigen::Matrix<double, 3, 15>::Zero();
   Hx.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
   Eigen::Vector3d tig = Eigen::Vector3d::Zero();
-  Hx.block<3, 3>(0, 6) = - Eigen::Matrix3d(q_0) * toSkewMatrix(tig);
+  Hx.block<3, 3>(0, 6) = -Eigen::Matrix3d(q_0) * toSkewMatrix(tig);
 
   double residual[3] = {0.0, 0.0, 0.0};
   Eigen::Map<Eigen::Vector3d> residual_vec(residual);
-  residual_vec = gps - p_0; 
+  residual_vec = gps - p_0;
   Eigen::Map<const Eigen::Matrix3d> V(gps_msg->position_covariance.data());
-  const Eigen::MatrixXd K = CovX * Hx.transpose() * (Hx * CovX * Hx.transpose() + V).inverse();
+  cout << "obser cov " << V << endl;
+  const Eigen::MatrixXd K =
+      CovX * Hx.transpose() * (Hx * CovX * Hx.transpose() + V).inverse();
   Eigen::VectorXd delta_x = K * residual_vec;
   p_0 += delta_x.block<3, 1>(0, 0);
   v_0 += delta_x.block<3, 1>(3, 0);
   ba_0 += delta_x.block<3, 1>(9, 0);
   bg_0 += delta_x.block<3, 1>(12, 0);
-  Eigen::Quaterniond delta_q;
-  
-  delta_q.x() = delta_x(6); //delta_x.block<3, 1>(6,0);
-  delta_q.y() = delta_x(7);
-  delta_q.z() = delta_x(8);
-  delta_x.w() = 1.0;
-  delta_q.normalize();//  normaliz
-  q_0 = q_0 * delta_q; 
+
+  if (delta_x.block<3, 1>(6, 0).norm() > 1e-12) {
+    q_0 *= Eigen::Quaterniond(
+        Eigen::
+        (delta_x.block<3, 1>(6, 0).norm(),
+                          delta_x.block<3, 1>(6, 0).normalized())
+            .toRotationMatrix());
+  }
+
+  //这种方法是错误的，原因是dtheta的更新量是弧度量，而下面的表示是
+  // Eigen::Quaterniond delta_q;
+
+  // delta_q.x() = delta_x(6);  // delta_x.block<3, 1>(6,0);
+  // delta_q.y() = delta_x(7);
+  // delta_q.z() = delta_x(8);
+  // delta_x.w() = 1.0;
+  // delta_q =  delta_q.normalized();  //  normaliz
+  // q_0 = q_0 * delta_q;
 
   Eigen::MatrixXd I_KH = Eigen::Matrix<double, 15, 15>::Identity() - K * Hx;
   CovX = I_KH * CovX * I_KH.transpose() + K * V * K.transpose();
-
 }
 
 main(int argc, char** argv) {

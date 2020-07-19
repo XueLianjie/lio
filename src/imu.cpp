@@ -82,7 +82,7 @@ void IMU::addIMUnoise(MotionData &data) {
   data.imu_acc_bias = acc_bias_;
 
   Eigen::Vector3d noise_position(noise(generator_), noise(generator_), noise(generator_));
-  data.twb += noise_position / 10.0;
+  data.twb += noise_position / 100.0;
 
 }
 
