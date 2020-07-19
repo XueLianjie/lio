@@ -31,6 +31,8 @@ main(int argc, char** argv) {
   nav_msgs::Path path_gt_msg;
   nav_msgs::Path path_gps_msg;
   sensor_msgs::NavSatFix gps;
+  gps.position_covariance = {0.01, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.01};
+
   int gps_count = 0;
 
   //当按Ctrl+C时，ros::ok()会返回0，退出该while循环，。
