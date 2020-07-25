@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   eigen_conversions
   tf_conversions
   tf
+  message_generation
 )
 find_package(Boost REQUIRED)
 
@@ -62,11 +63,12 @@ find_package(SuiteSparse REQUIRED)
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  CameraMeasurement.msg
+  FeatureMeasurement.msg
+  TrackingInfo.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -83,10 +85,10 @@ find_package(SuiteSparse REQUIRED)
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -166,6 +168,7 @@ add_executable(imu_pub_node src/imu_pub_node.cpp
                             src/imu.cpp
                             src/utilities.cpp
                             src/param.cpp
+                            src/feature_generator.cpp
                             )
 
 ## Rename C++ executable without prefix

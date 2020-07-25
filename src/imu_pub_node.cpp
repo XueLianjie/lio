@@ -9,6 +9,11 @@
 #include "sensor_msgs/Imu.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "utilities.h"
+#include "lio/CameraMeasurement.h"
+#include "lio/FeatureMeasurement.h"
+#include "lio/TrackingInfo.h"
+#include "feature_generator.h"
+
 using namespace std;
 
 main(int argc, char** argv) {
