@@ -25,19 +25,21 @@ main(int argc, char** argv) {
   ros::Publisher gt_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
   ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("/gps", 1000);
   ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
-
+  ros::Publisher feature_pub = nh.advertise<lio::CameraMeasurement>("features", 100);
   // ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
 
   ros::Rate loop_rate(200);
   int number_count = 0;
   Param params;
   IMU imuGen(params);
+  FeatureGenerator feature_generator("/home/rankin/vio_ws/src/lio/house_model/house.txt");
+  std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> > features;
+
   sensor_msgs::Imu msg;
   nav_msgs::Path path_gt_msg;
   nav_msgs::Path path_gps_msg;
   sensor_msgs::NavSatFix gps;
   gps.position_covariance = {0.0001, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0001};
-
   int gps_count = 0;
 
   //当按Ctrl+C时，ros::ok()会返回0，退出该while循环，。
@@ -58,7 +60,10 @@ main(int argc, char** argv) {
     gps.header.frame_id = "world";
 
     MotionData data = imuGen.MotionModel(t);
-
+    Eigen::Matrix4d Twc = Eigen::Matrix4d::Identity();
+    Twc.block<3, 3>(0, 0) = data.Rwb * params.R_bc;
+    Twc.block<3, 1>(0, 3) = data.twb + data.Rwb * params.t_bc;
+    
     Eigen::Quaterniond q(data.Rwb);
     geometry_msgs::Pose pose;
     pose.position.x = data.twb(0);
@@ -107,6 +112,20 @@ main(int argc, char** argv) {
 
     gps_count+= 10;
     if (gps_count == params.imu_frequency) {
+      features = feature_generator.featureObservation(Twc);
+      lio::CameraMeasurementPtr feature_msg_ptr(new lio::CameraMeasurement);
+      feature_msg_ptr->header.stamp = time_now;
+      std::cout << t << " Twc " << Twc << std::endl;
+      for (int i = 0; i < features.size(); ++i) {
+        feature_msg_ptr->features.push_back(lio::FeatureMeasurement());
+        feature_msg_ptr->features[i].id = i;
+        feature_msg_ptr->features[i].u0 = features[i](0);
+        feature_msg_ptr->features[i].v0 = features[i](1);
+        feature_msg_ptr->features[i].u1 = features[i](0);
+        feature_msg_ptr->features[i].v1 = features[i](1);
+        std::cout << "features " << features[i].transpose() << std::endl;
+      }
+      feature_pub.publish(feature_msg_ptr);
       // gps data
       gps.latitude = data.twb(0);
       gps.longitude = data.twb(1);
