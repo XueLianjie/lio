@@ -142,7 +142,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${OpenCV_INCLUDE_DIRS}
   ${SUITESPARSE_INCLUDE_DIRS}
-
+  include/lio
 )
 
 ## Declare a C++ library

@@ -25,7 +25,7 @@ main(int argc, char** argv) {
   ros::Publisher gt_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
   ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("/gps", 1000);
   ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
-  ros::Publisher feature_pub = nh.advertise<lio::CameraMeasurement>("features", 100);
+  ros::Publisher feature_pub = nh.advertise<lio::CameraMeasurement>("/features", 100);
   // ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
 
   ros::Rate loop_rate(200);
@@ -115,7 +115,7 @@ main(int argc, char** argv) {
       features = feature_generator.featureObservation(Twc);
       lio::CameraMeasurementPtr feature_msg_ptr(new lio::CameraMeasurement);
       feature_msg_ptr->header.stamp = time_now;
-      std::cout << t << " Twc " << Twc << std::endl;
+      //std::cout << t << " Twc " << Twc << std::endl;
       for (int i = 0; i < features.size(); ++i) {
         feature_msg_ptr->features.push_back(lio::FeatureMeasurement());
         feature_msg_ptr->features[i].id = i;
@@ -123,7 +123,7 @@ main(int argc, char** argv) {
         feature_msg_ptr->features[i].v0 = features[i](1);
         feature_msg_ptr->features[i].u1 = features[i](0);
         feature_msg_ptr->features[i].v1 = features[i](1);
-        std::cout << "features " << features[i].transpose() << std::endl;
+        //std::cout << "features " << features[i].transpose() << std::endl;
       }
       feature_pub.publish(feature_msg_ptr);
       // gps data

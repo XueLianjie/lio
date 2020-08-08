@@ -9,6 +9,7 @@
 #include <Eigen/SPQRSupport>
 #include <Eigen/SVD>
 #include <Eigen/SparseCore>
+#include <feature.hpp>
 #include <fstream>
 #include <iostream>
 #include <queue>
@@ -16,6 +17,10 @@
 
 #include "imu.h"
 #include "imu_state.h"
+#include "lio.h"
+#include "lio/CameraMeasurement.h"
+#include "lio/FeatureMeasurement.h"
+#include "lio/TrackingInfo.h"
 #include "nav_msgs/Odometry.h"
 #include "param.h"
 #include "ros/ros.h"
@@ -23,6 +28,7 @@
 #include "sensor_msgs/NavSatFix.h"
 
 using namespace std;
+using namespace Eigen;
 
 #define MID_INTEGRATION
 
@@ -266,8 +272,8 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 }
 
 void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
-  ROS_INFO("gps timestamp %f,  %f, %f, %f", gps_msg->header.stamp.toSec(), gps_msg->latitude,
-           gps_msg->longitude, gps_msg->altitude);
+  ROS_INFO("gps timestamp %f,  %f, %f, %f", gps_msg->header.stamp.toSec(),
+           gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
 
   Eigen::Vector3d gps(gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
   Eigen::Matrix<double, 3, 15> Hx = Eigen::Matrix<double, 3, 15>::Zero();
@@ -308,6 +314,98 @@ void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
   Eigen::MatrixXd I_KH = Eigen::Matrix<double, 15, 15>::Identity() - K * Hx;
   CovX = I_KH * CovX * I_KH.transpose() + K * V * K.transpose();
 }
+/*
+void stateAugmentation(const double& time) {
+
+  const Matrix3d& R_i_c = state_server.imu_state.R_imu_cam0;
+  const Vector3d& t_c_i = state_server.imu_state.t_cam0_imu;
+
+  // Add a new camera state to the state server.
+  Matrix3d R_w_i = quaternionToRotation(
+      state_server.imu_state.orientation);
+  Matrix3d R_w_c = R_i_c * R_w_i;
+  Vector3d t_c_w = state_server.imu_state.position +
+    R_w_i.transpose()*t_c_i;
+
+  state_server.cam_states[state_server.imu_state.id] =
+    CAMState(state_server.imu_state.id);
+  CAMState& cam_state = state_server.cam_states[
+    state_server.imu_state.id];
+
+  cam_state.time = time;
+  cam_state.orientation = rotationToQuaternion(R_w_c);
+  cam_state.position = t_c_w;
+
+  cam_state.orientation_null = cam_state.orientation;
+  cam_state.position_null = cam_state.position;
+
+  // Update the covariance matrix of the state.
+  // To simplify computation, the matrix J below is the nontrivial block
+  // in Equation (16) in "A Multi-State Constraint Kalman Filter for Vision
+  // -aided Inertial Navigation".
+  Matrix<double, 6, 21> J = Matrix<double, 6, 21>::Zero();
+  J.block<3, 3>(0, 0) = R_i_c;
+  J.block<3, 3>(0, 15) = Matrix3d::Identity();
+  J.block<3, 3>(3, 0) = skewSymmetric(R_w_i.transpose()*t_c_i);
+  //J.block<3, 3>(3, 0) = -R_w_i.transpose()*skewSymmetric(t_c_i);
+  J.block<3, 3>(3, 12) = Matrix3d::Identity();
+  J.block<3, 3>(3, 18) = Matrix3d::Identity();
+
+  // Resize the state covariance matrix.
+  size_t old_rows = state_server.state_cov.rows();
+  size_t old_cols = state_server.state_cov.cols();
+  state_server.state_cov.conservativeResize(old_rows+6, old_cols+6);
+
+  // Rename some matrix blocks for convenience.
+  const Matrix<double, 21, 21>& P11 =
+    state_server.state_cov.block<21, 21>(0, 0);
+  const MatrixXd& P12 =
+    state_server.state_cov.block(0, 21, 21, old_cols-21);
+
+  // Fill in the augmented state covariance.
+  state_server.state_cov.block(old_rows, 0, 6, old_cols) << J*P11, J*P12;
+  state_server.state_cov.block(0, old_cols, old_rows, 6) =
+    state_server.state_cov.block(old_rows, 0, 6, old_cols).transpose();
+  state_server.state_cov.block<6, 6>(old_rows, old_cols) =
+    J * P11 * J.transpose();
+
+  // Fix the covariance to be symmetric
+  MatrixXd state_cov_fixed = (state_server.state_cov +
+      state_server.state_cov.transpose()) / 2.0;
+  state_server.state_cov = state_cov_fixed;
+
+  return;
+}
+*/
+void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
+  ROS_INFO("received feature msg: %f ", msg->header.stamp.toSec());
+  if (!initialize_flag) {
+    return;
+  }
+
+  ros::Time start_time = ros::Time::now();
+  // Augment the state vector.
+  start_time = ros::Time::now();
+  //stateAugmentation(msg->header.stamp.toSec());
+  double state_augmentation_time = (
+  ros::Time::now()-start_time).toSec();
+
+  // Add new observations for existing features or new
+  // features in the map server.
+  // 将特征点放到对应的map server里面，如果已经有了则增加观测项
+  // start_time = ros::Time::now();
+  // addFeatureObservations(msg);
+  // double add_observations_time = (
+  // ros::Time::now()-start_time).toSec();
+
+  // // Perform measurement update if necessary.
+  // start_time = ros::Time::now();
+  // removeLostFeatures();
+  // double remove_lost_features_time = (
+  // ros::Time::now()-start_time).toSec();
+
+
+}
 
 main(int argc, char** argv) {
   ros::init(argc, argv, "lio_node");
@@ -319,7 +417,8 @@ main(int argc, char** argv) {
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
 
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
-  ros::Subscriber gps_sub = nh.subscribe("/gps", 100, gpsCallback);
+  ros::Subscriber gps_sub = nh.subscribe("/gps0", 100, gpsCallback);
+  ros::Subscriber feature_sub = nh.subscribe("/features", 100, featureCallback);
 
   // ros::Rate rate(10);
 
