@@ -118,7 +118,7 @@ find_package(SuiteSparse REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS include
+  INCLUDE_DIRS 
   LIBRARIES msckf_vio image_processor
   CATKIN_DEPENDS
     roscpp std_msgs tf nav_msgs sensor_msgs geometry_msgs
