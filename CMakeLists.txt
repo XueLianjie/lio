@@ -189,6 +189,12 @@ target_link_libraries(${PROJECT_NAME}_node
 target_link_libraries(imu_pub_node
   ${catkin_LIBRARIES}
 )
+
+add_executable(test_marker_node src/test_marker.cpp
+                            )
+target_link_libraries(test_marker_node
+  ${catkin_LIBRARIES}
+)
 #############
 ## Install ##
 #############

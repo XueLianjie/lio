@@ -30,7 +30,6 @@ main(int argc, char **argv)
   ros::Publisher gt_path_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
   ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("/gps", 1000);
   ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
-  ros::Publisher feature_pub = nh.advertise<CameraMeasurement>("/features", 100);
   ros::Publisher gt_pose_pub = nh.advertise<CameraMeasurement>("/features", 100);
   //ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
   Visualizer visualizer(nh);
@@ -123,27 +122,12 @@ main(int argc, char **argv)
     imu_pub.publish(imu_msg);
     //ROS_INFO("pub imu_msg time : %f", imu_msg.header.stamp.toSec());
 
-
     pub_feature_step += 10;
     if (pub_feature_step == params.imu_frequency)
     {
-      // publish cam features 
+      // publish cam features
       features = feature_generator.featureObservation(Twc);
-      CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
-      feature_msg_ptr->header.stamp = time_now;
-      //std::cout << t << " Twc " << Twc << std::endl;
-      std::cout << "observation size " << features.size() << std::endl;
-      for (int i = 0; i < features.size(); ++i)
-      {
-        feature_msg_ptr->features.push_back(FeatureMeasurement());
-        feature_msg_ptr->features[i].id = i;
-        feature_msg_ptr->features[i].u0 = features[i](0);
-        feature_msg_ptr->features[i].v0 = features[i](1);
-        feature_msg_ptr->features[i].u1 = features[i](0);
-        feature_msg_ptr->features[i].v1 = features[i](1);
-        //std::cout << "features " << features[i].transpose() << std::endl;
-      }
-      feature_pub.publish(feature_msg_ptr);
+      visualizer.PublishFeaturePoints(time_now, features);
 
       // publish gps data
       gps.header.stamp = time_now;

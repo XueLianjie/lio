@@ -1,7 +1,13 @@
+#ifndef VISUALIZER_H
+#define VISUALIZER_H
+
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
 #include <visualization_msgs/Marker.h>
 #include <Eigen/Eigen>
+#include "lio/CameraMeasurement.h"
+#include "lio/FeatureMeasurement.h"
+using namespace lio;
 
 class Visualizer
 {
@@ -28,8 +34,8 @@ public:
 
         //初始化大小
         // POINTS markers use x and y scale for width/height respectively
-        points_.scale.x = 1;
-        points_.scale.y = 1;
+        points_.scale.x = 0.1;
+        points_.scale.y = 0.1;
 
         // LINE_STRIP/LINE_LIST markers use only the x component of scale, for the line width
         line_strip_.scale.x = 0.1;
@@ -40,7 +46,7 @@ public:
 
         //初始化颜色
         // Points are green
-        points_.color.r = 1.0;
+        points_.color.g = 1.0;
         points_.color.a = 1.0;
 
         // Line strip is blue
@@ -50,6 +56,27 @@ public:
         // Line list is red
         line_list_.color.r = 1.0;
         line_list_.color.a = 1.0;
+
+        features_pub_ = nh_.advertise<CameraMeasurement>("/features", 100);
+
+        //初始化
+        feature_points_.header.frame_id = "cam_frame";
+        feature_points_.ns = "features";
+        feature_points_.action = visualization_msgs::Marker::ADD;
+        feature_points_.pose.orientation.w = 1.0;
+
+        //分配3个id
+        feature_points_.id = 1;
+
+        //初始化形状
+        feature_points_.type = visualization_msgs::Marker::POINTS;
+
+        feature_points_.scale.x = 0.1;
+        feature_points_.scale.y = 0.1;
+
+        //初始化颜色
+        feature_points_.color.g = 1.0;
+        feature_points_.color.a = 1.0;
     }
 
     Visualizer(const Visualizer &vis) = delete;
@@ -59,7 +86,7 @@ public:
     {
     }
 
-    void AddPoints(std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d>> &points)
+    void AddPoints(const std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d>> &points)
     {
         // Create the vertices for the points and lines
         for (uint32_t i = 0; i < points.size(); ++i)
@@ -79,7 +106,7 @@ public:
         }
     }
 
-    void AddLines(std::vector<std::pair<Eigen::Vector4d, Eigen::Vector4d>, Eigen::aligned_allocator<std::pair<Eigen::Vector4d, Eigen::Vector4d>>> &lines)
+    void AddLines(const std::vector<std::pair<Eigen::Vector4d, Eigen::Vector4d>, Eigen::aligned_allocator<std::pair<Eigen::Vector4d, Eigen::Vector4d>>> &lines)
     {
         // Create the vertices for the points and lines
         for (uint32_t i = 0; i < lines.size(); ++i)
@@ -103,7 +130,7 @@ public:
         }
     }
 
-    void PublishMarker(ros::Time &stamp)
+    void PublishMarker(const ros::Time &stamp)
     {
         points_.header.stamp = line_strip_.header.stamp = line_list_.header.stamp = stamp;
         //marker_pub_.publish(line_strip_);
@@ -111,7 +138,7 @@ public:
         marker_pub_.publish(points_);
     }
 
-    void PublishCamFrame(ros::Time &stamp, Eigen::Matrix4d &Twc)
+    void PublishCamFrame(const ros::Time &stamp, const Eigen::Matrix4d &Twc)
     {
         Eigen::Vector3d twc = Twc.block<3, 1>(0, 3);
         Eigen::Quaterniond qwc(Twc.block<3, 3>(0, 0));
@@ -122,7 +149,7 @@ public:
         br_.sendTransform(tf::StampedTransform(transform_, stamp, "world", "cam_frame"));
     }
 
-    void PublishBodyFrame(ros::Time &stamp, Eigen::Matrix4d &Twb)
+    void PublishBodyFrame(const ros::Time &stamp, const Eigen::Matrix4d &Twb)
     {
         Eigen::Vector3d twb = Twb.block<3, 1>(0, 3);
         Eigen::Quaterniond qwb(Twb.block<3, 3>(0, 0));
@@ -133,10 +160,45 @@ public:
         br_.sendTransform(tf::StampedTransform(transform_, stamp, "world", "body_frame"));
     }
 
+    void PublishFeaturePoints(const ros::Time &stamp, const std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> &features)
+    {
+        CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
+        feature_msg_ptr->header.stamp = stamp;
+
+        feature_points_.header.stamp = stamp;
+        feature_points_.points.clear();
+        //std::cout << t << " Twc " << Twc << std::endl;
+        std::cout << "observation size " << features.size() << std::endl;
+        geometry_msgs::Point p;
+
+        for (int i = 0; i < features.size(); ++i)
+        {
+            feature_msg_ptr->features.push_back(FeatureMeasurement());
+            feature_msg_ptr->features[i].id = i;
+            feature_msg_ptr->features[i].u0 = features[i](0);
+            feature_msg_ptr->features[i].v0 = features[i](1);
+            feature_msg_ptr->features[i].u1 = features[i](0);
+            feature_msg_ptr->features[i].v1 = features[i](1);
+            //std::cout << "features " << features[i].transpose() << std::endl;
+            p.x = features[i](0);
+            p.y = features[i](1);
+            p.z = 1.0;
+
+            feature_points_.points.push_back(p);
+        }
+        features_pub_.publish(feature_msg_ptr);
+        marker_pub_.publish(feature_points_);
+    }
+
 private:
     visualization_msgs::Marker points_, line_strip_, line_list_;
+    visualization_msgs::Marker feature_points_;
     ros::Publisher marker_pub_;
+    ros::Publisher features_pub_;
+
     ros::NodeHandle nh_;
     tf::TransformBroadcaster br_;
     tf::Transform transform_;
 };
+
+#endif
