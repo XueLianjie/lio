@@ -145,7 +145,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: true
-      Enabled: true
+      Enabled: false
       Keep: 100
       Name: Odometry
       Position Tolerance: 0.10000000149011612
@@ -161,19 +161,19 @@ Visualization Manager:
         Value: Arrow
       Topic: /lio_node/odom
       Unreliable: false
-      Value: true
+      Value: false
     - Class: rviz/TF
       Enabled: true
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         body_frame:
-          Value: true
+          Value: false
         cam_frame:
           Value: true
         world:
           Value: true
-      Marker Scale: 8
+      Marker Scale: 5
       Name: TF
       Show Arrows: true
       Show Axes: true
@@ -191,6 +191,7 @@ Visualization Manager:
       Marker Topic: /imu_pub_node/visualization_marker
       Name: Marker
       Namespaces:
+        features: true
         points_and_lines: true
       Queue Size: 100
       Value: true
@@ -222,25 +223,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 61.647621154785156
+      Distance: 38.509559631347656
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -5.129990577697754
-        Y: 0.940973162651062
-        Z: -0.3157470226287842
+        X: -2.886667490005493
+        Y: 8.700894355773926
+        Z: -6.444653034210205
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5553979873657227
+      Pitch: 0.6253979206085205
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.503572940826416
+      Yaw: 6.158574104309082
     Saved: ~
 Window Geometry:
   Displays:

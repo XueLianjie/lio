@@ -34,7 +34,7 @@ main(int argc, char **argv)
   //ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
   Visualizer visualizer(nh);
 
-  ros::Rate loop_rate(20);
+  ros::Rate loop_rate(10);
   Param params;
   IMU imuGen(params);
 
@@ -73,7 +73,6 @@ main(int argc, char **argv)
 
     // publish marker
     visualizer.PublishMarker(time_now);
-
     // publish cam frame & body frame
     Eigen::Matrix4d Twc = Eigen::Matrix4d::Identity();
     Eigen::Matrix4d Twb = Eigen::Matrix4d::Identity();
@@ -81,7 +80,6 @@ main(int argc, char **argv)
     Twc.block<3, 1>(0, 3) = data.twb + data.Rwb * params.t_bc;
     Twb.block<3, 3>(0, 0) = data.Rwb;
     Twb.block<3, 1>(0, 3) = data.twb;
-    visualizer.PublishCamFrame(time_now, Twc);
     visualizer.PublishBodyFrame(time_now, Twb);
 
     // publish ground truth msg
@@ -128,6 +126,8 @@ main(int argc, char **argv)
       // publish cam features
       features = feature_generator.featureObservation(Twc);
       visualizer.PublishFeaturePoints(time_now, features);
+      visualizer.PublishCamFrame(time_now, Twc);
+      visualizer.PublishFeatureLines(time_now, Twc);
 
       // publish gps data
       gps.header.stamp = time_now;

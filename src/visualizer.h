@@ -61,22 +61,32 @@ public:
 
         //初始化
         feature_points_.header.frame_id = "cam_frame";
-        feature_points_.ns = "features";
-        feature_points_.action = visualization_msgs::Marker::ADD;
-        feature_points_.pose.orientation.w = 1.0;
+        feature_points_.ns = feature_lines_list_.ns = "features";
+        feature_points_.action = feature_lines_list_.action = visualization_msgs::Marker::ADD;
+        feature_points_.pose.orientation.w = feature_lines_list_.pose.orientation.w = 1.0;
+
+        feature_lines_list_.header.frame_id = "/world";
 
         //分配3个id
-        feature_points_.id = 1;
+        feature_points_.id = 0;
+        feature_lines_list_.id = 1;
 
         //初始化形状
         feature_points_.type = visualization_msgs::Marker::POINTS;
+        feature_lines_list_.type = visualization_msgs::Marker::LINE_LIST;
 
         feature_points_.scale.x = 0.1;
         feature_points_.scale.y = 0.1;
 
+        feature_lines_list_.scale.x = 0.02;
+
         //初始化颜色
         feature_points_.color.g = 1.0;
         feature_points_.color.a = 1.0;
+
+        feature_lines_list_.color.r = 1.0;
+        feature_lines_list_.color.g = 1.0;
+        feature_lines_list_.color.a = 1.0;
     }
 
     Visualizer(const Visualizer &vis) = delete;
@@ -190,9 +200,31 @@ public:
         marker_pub_.publish(feature_points_);
     }
 
+    void PublishFeatureLines(const ros::Time &stamp, const Eigen::Matrix4d &Twc)
+    {
+        geometry_msgs::Point p0, p1;
+
+        Eigen::Vector3d twc = Twc.block<3, 1>(0, 3);
+        p0.x = twc(0);
+        p0.y = twc(1);
+        p0.z = twc(2);
+        feature_lines_list_.header.stamp = stamp;
+        feature_lines_list_.points.clear();
+        for (uint32_t i = 0; i < points_.points.size(); ++i)
+        {
+            p1 = points_.points[i];
+            // The line list needs two points for each line
+            feature_lines_list_.points.push_back(p0);
+            // p.z += 1.0;
+            feature_lines_list_.points.push_back(p1);
+        }
+
+        marker_pub_.publish(feature_lines_list_);
+    }
+
 private:
     visualization_msgs::Marker points_, line_strip_, line_list_;
-    visualization_msgs::Marker feature_points_;
+    visualization_msgs::Marker feature_points_, feature_lines_list_;
     ros::Publisher marker_pub_;
     ros::Publisher features_pub_;
 
