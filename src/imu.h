@@ -15,7 +15,7 @@
 
 struct MotionData
 {
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW // must add this for byte_alignment
     double timestamp;
     Eigen::Matrix3d Rwb;
     Eigen::Vector3d twb;
@@ -36,7 +36,8 @@ class IMU
 {
   public:
     IMU(Param p);
-    Param param_;
+    Param param_; // parameters that will not change 
+    // imu state variables p v q ba bg
     Eigen::Vector3d gyro_bias_;
     Eigen::Vector3d acc_bias_;
 

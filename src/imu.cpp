@@ -122,10 +122,10 @@ MotionData IMU::MotionModel(double t) {
   //    angles 的导数
 
   Eigen::Matrix3d Rwb =
-      euler2Rotation(eulerAngles);  // body frame to world frame
+      euler2Rotation(eulerAngles);  // body frame to world frame euler angles in world frame
   //也可以看做是关节空间到运动空间的雅各比矩阵，从速度映射到速度
   Eigen::Vector3d imu_gyro =
-      eulerRates2bodyRates(eulerAngles) *
+      eulerRates2bodyRates(eulerAngles) * // build jacobian matrix from 
       eulerAnglesRates;  //  euler rates trans to body gyro
 
   Eigen::Vector3d gn(0, 0, -9.81);  //  gravity in navigation frame(ENU)   ENU

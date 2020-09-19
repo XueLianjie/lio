@@ -9,7 +9,7 @@
 #include <Eigen/SPQRSupport>
 #include <Eigen/SVD>
 #include <Eigen/SparseCore>
-#include <feature.hpp>
+//#include <feature.hpp>
 #include <fstream>
 #include <iostream>
 #include <queue>
@@ -17,7 +17,7 @@
 
 #include "imu.h"
 #include "imu_state.h"
-#include "lio.h"
+//#include "lio.h"
 #include "lio/CameraMeasurement.h"
 #include "lio/FeatureMeasurement.h"
 #include "lio/TrackingInfo.h"
@@ -95,10 +95,10 @@ bool staticInitialize() {
 
 void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   double imu_time_s = msg->header.stamp.toSec();
-  ROS_INFO("imu time stamp: %f ", imu_time_s);
+  //ROS_INFO("imu time stamp: %f ", imu_time_s);
   // cout << "imu time stamp: %f " << imu_time_s << endl;
-  cout << "acc: \n " << msg->linear_acceleration << endl;
-  cout << "gyro: \n " << msg->angular_velocity << endl;
+  //cout << "acc: \n " << msg->linear_acceleration << endl;
+  //cout << "gyro: \n " << msg->angular_velocity << endl;
 
   // if (!initialize_flag) {
   //   imuBuffer.push_back(*msg);
@@ -417,7 +417,7 @@ main(int argc, char** argv) {
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
 
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
-  ros::Subscriber gps_sub = nh.subscribe("/gps0", 100, gpsCallback);
+  ros::Subscriber gps_sub = nh.subscribe("/gps", 100, gpsCallback);
   ros::Subscriber feature_sub = nh.subscribe("/features", 100, featureCallback);
 
   // ros::Rate rate(10);

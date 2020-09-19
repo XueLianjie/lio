@@ -13,8 +13,12 @@
 #include "lio/FeatureMeasurement.h"
 #include "lio/TrackingInfo.h"
 #include "feature_generator.h"
+#include <tf/transform_broadcaster.h>
+#include <visualization_msgs/Marker.h>
+#include "visualizer.h"
 
 using namespace std;
+using namespace lio;
 
 main(int argc, char** argv) {
   ros::init(argc, argv, "imu_pub_node");
@@ -22,25 +26,32 @@ main(int argc, char** argv) {
   ros::NodeHandle nh("~");
 
   ros::Publisher imu_pub = nh.advertise<sensor_msgs::Imu>("/imu_sim", 1000);
-  ros::Publisher gt_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
+  ros::Publisher gt_path_pub = nh.advertise<nav_msgs::Path>("gt", 1000);
   ros::Publisher gps_pub = nh.advertise<sensor_msgs::NavSatFix>("/gps", 1000);
   ros::Publisher gps_path_pub = nh.advertise<nav_msgs::Path>("gps_path", 1000);
-  ros::Publisher feature_pub = nh.advertise<lio::CameraMeasurement>("/features", 100);
-  // ros::Subscriber imu_sub = nh.subscribe("/imu0", 1000, imuCallback);
+  ros::Publisher feature_pub = nh.advertise<CameraMeasurement>("/features", 100);
+  ros::Publisher gt_pose_pub = nh.advertise<CameraMeasurement>("/features", 100);
+  //ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
+  Visualizer visualizer(nh);
 
-  ros::Rate loop_rate(200);
-  int number_count = 0;
+  tf::TransformBroadcaster br;
+  tf::Transform transform;
+
+  ros::Rate loop_rate(20);
   Param params;
   IMU imuGen(params);
-  FeatureGenerator feature_generator("/home/xue/Documents/lio_ws/src/lio/house_model/house.txt");
+
+  string model_path;
+  nh.getParam("model_path", model_path);
+  FeatureGenerator feature_generator(model_path);
   std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> > features;
 
-  sensor_msgs::Imu msg;
+  sensor_msgs::Imu imu_msg;
   nav_msgs::Path path_gt_msg;
   nav_msgs::Path path_gps_msg;
   sensor_msgs::NavSatFix gps;
   gps.position_covariance = {0.0001, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0001};
-  int gps_count = 0;
+  int pub_feature_step = 0;
 
   //当按Ctrl+C时，ros::ok()会返回0，退出该while循环，。
   float t = params.t_start;
@@ -50,12 +61,17 @@ main(int argc, char** argv) {
   std::string str = "published_points.txt";
   save_points.open(str.c_str());
 
+  std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d> > points = feature_generator.getPoints();
+  std::vector<std::pair<Eigen::Vector4d, Eigen::Vector4d>, Eigen::aligned_allocator<std::pair<Eigen::Vector4d, Eigen::Vector4d>>> lines = feature_generator.getLines();
+  visualizer.AddPoints(points);
+  visualizer.AddLines(lines);
   // save_points.open(str.c_str());
   while (ros::ok()) {
     ros::Time time_now(begin + t);
+    visualizer.PublishMarker(time_now);
 
-    msg.header.stamp = time_now;
-    msg.header.frame_id = "world";
+    imu_msg.header.stamp = time_now;
+    imu_msg.header.frame_id = "world";
     gps.header.stamp = time_now;
     gps.header.frame_id = "world";
 
@@ -74,31 +90,45 @@ main(int argc, char** argv) {
     pose.orientation.z = q.z();
     pose.orientation.w = q.w();
     geometry_msgs::PoseStamped pose_stamped;
-    pose_stamped.header = msg.header;
+    pose_stamped.header = imu_msg.header;
     pose_stamped.header.frame_id = "world";
     pose_stamped.pose = pose;
     path_gt_msg.header.stamp = time_now;
     path_gt_msg.header.frame_id = "world";
     path_gt_msg.poses.push_back(pose_stamped);
 
+    transform.setOrigin( tf::Vector3(data.twb(0), data.twb(1), data.twb(2)) );
+    tf::Quaternion tf_q(q.x(), q.y(), q.z(), q.w());
+    transform.setRotation(tf_q);
+
+    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "body_frame"));
+
+    Eigen::Vector3d twc = Twc.block<3, 1>(0, 3);
+    Eigen::Quaterniond qwc(Twc.block<3, 3>(0, 0));
+    transform.setOrigin( tf::Vector3(twc(0), twc(1), twc(2)) );
+    tf::Quaternion tf_qwc(qwc.x(), qwc.y(), qwc.z(), qwc.w());
+    transform.setRotation(tf_qwc);
+
+    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "cam_frame"));
+
     imuGen.addIMUnoise(data);
 
     // Eigen::Quaterniond q(data.Rwb);
     //四元数位姿
-    msg.orientation.x = t;  // q.x();
-    msg.orientation.y = q.y();
-    msg.orientation.z = q.z();
-    msg.orientation.w = q.w();
+    imu_msg.orientation.x = t;  // q.x();
+    imu_msg.orientation.y = q.y();
+    imu_msg.orientation.z = q.z();
+    imu_msg.orientation.w = q.w();
     //线加速度
-    msg.linear_acceleration.x = data.imu_acc(0);
-    msg.linear_acceleration.y = data.imu_acc(1);
-    msg.linear_acceleration.z = data.imu_acc(2);
+    imu_msg.linear_acceleration.x = data.imu_acc(0);
+    imu_msg.linear_acceleration.y = data.imu_acc(1);
+    imu_msg.linear_acceleration.z = data.imu_acc(2);
     //角速度
-    msg.angular_velocity.x = data.imu_gyro(0);
-    msg.angular_velocity.y = data.imu_gyro(1);
-    msg.angular_velocity.z = data.imu_gyro(2);
+    imu_msg.angular_velocity.x = data.imu_gyro(0);
+    imu_msg.angular_velocity.y = data.imu_gyro(1);
+    imu_msg.angular_velocity.z = data.imu_gyro(2);
 
-    ROS_INFO("pub msg time : %f", msg.header.stamp.toSec());
+    //ROS_INFO("pub imu_msg time : %f", imu_msg.header.stamp.toSec());
     save_points << t << " " << q.w() << " " << q.x() << " " << q.y() << " "
                 << q.z() << " " << data.twb(0) << " " << data.twb(1) << " "
                 << data.twb(2) << " " << data.imu_gyro(0) << " "
@@ -107,17 +137,18 @@ main(int argc, char** argv) {
                 << data.imu_acc(2) << " " << 0 << " " << 0 << " " << 0 << " "
                 << 0 << " " << 0 << " " << 0 << " " << std::endl;
 
-    imu_pub.publish(msg);
-    gt_pub.publish(path_gt_msg);
+    imu_pub.publish(imu_msg);
+    gt_path_pub.publish(path_gt_msg);
 
-    gps_count+= 10;
-    if (gps_count == params.imu_frequency) {
+    pub_feature_step+= 10;
+    if (pub_feature_step == params.imu_frequency) {
       features = feature_generator.featureObservation(Twc);
-      lio::CameraMeasurementPtr feature_msg_ptr(new lio::CameraMeasurement);
+      CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
       feature_msg_ptr->header.stamp = time_now;
       //std::cout << t << " Twc " << Twc << std::endl;
+      std::cout << "observation size " << features.size() << std::endl;
       for (int i = 0; i < features.size(); ++i) {
-        feature_msg_ptr->features.push_back(lio::FeatureMeasurement());
+        feature_msg_ptr->features.push_back(FeatureMeasurement());
         feature_msg_ptr->features[i].id = i;
         feature_msg_ptr->features[i].u0 = features[i](0);
         feature_msg_ptr->features[i].v0 = features[i](1);
@@ -140,14 +171,15 @@ main(int argc, char** argv) {
       path_gps_msg.poses.push_back(pose_stamped);
       gps_pub.publish(gps);
       gps_path_pub.publish(path_gps_msg);
-      gps_count = 0;
+      pub_feature_step = 0;
     }
 
     //读取和更新ROS topics，如果没有spinonce()或spin()，节点不会发布消息。
     ros::spinOnce();
 
-    loop_rate.sleep();
     t += 1.0 / params.imu_frequency;
+    loop_rate.sleep();
+
   }
   return 0;
   ros::spin();
