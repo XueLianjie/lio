@@ -32,7 +32,7 @@ main(int argc, char** argv) {
   int number_count = 0;
   Param params;
   IMU imuGen(params);
-  FeatureGenerator feature_generator("/home/rankin/vio_ws/src/lio/house_model/house.txt");
+  FeatureGenerator feature_generator("/home/xue/Documents/lio_ws/src/lio/house_model/house.txt");
   std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> > features;
 
   sensor_msgs::Imu msg;
