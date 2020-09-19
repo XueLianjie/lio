@@ -98,8 +98,8 @@ MotionData IMU::MotionModel(double t) {
 
   // translation
   // twb:  body frame in world frame
-  Eigen::Vector3d position(ellipse_x * cos(K * t),
-                           ellipse_y * sin(K * t), z * sin(K1 * K * t) + 5);
+  Eigen::Vector3d position(ellipse_x * cos(K * t) + 5,
+                           ellipse_y * sin(K * t) + 5, z * sin(K1 * K * t) + 5);
   Eigen::Vector3d dp(
       -K * ellipse_x * sin(K * t), K * ellipse_y * cos(K * t),
       z * K1 * K * cos(K1 * K * t));  // position导数　in world frame
