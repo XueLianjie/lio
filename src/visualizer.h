@@ -111,8 +111,32 @@ public:
         marker_pub_.publish(points_);
     }
 
+    void PublishCamFrame(ros::Time &stamp, Eigen::Matrix4d &Twc)
+    {
+        Eigen::Vector3d twc = Twc.block<3, 1>(0, 3);
+        Eigen::Quaterniond qwc(Twc.block<3, 3>(0, 0));
+        transform_.setOrigin(tf::Vector3(twc(0), twc(1), twc(2)));
+        tf::Quaternion tf_qwc(qwc.x(), qwc.y(), qwc.z(), qwc.w());
+        transform_.setRotation(tf_qwc);
+
+        br_.sendTransform(tf::StampedTransform(transform_, stamp, "world", "cam_frame"));
+    }
+
+    void PublishBodyFrame(ros::Time &stamp, Eigen::Matrix4d &Twb)
+    {
+        Eigen::Vector3d twb = Twb.block<3, 1>(0, 3);
+        Eigen::Quaterniond qwb(Twb.block<3, 3>(0, 0));
+        transform_.setOrigin(tf::Vector3(twb(0), twb(1), twb(2)));
+        tf::Quaternion tf_qwb(qwb.x(), qwb.y(), qwb.z(), qwb.w());
+        transform_.setRotation(tf_qwb);
+
+        br_.sendTransform(tf::StampedTransform(transform_, stamp, "world", "body_frame"));
+    }
+
 private:
     visualization_msgs::Marker points_, line_strip_, line_list_;
     ros::Publisher marker_pub_;
     ros::NodeHandle nh_;
+    tf::TransformBroadcaster br_;
+    tf::Transform transform_;
 };

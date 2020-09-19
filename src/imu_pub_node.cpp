@@ -20,7 +20,8 @@
 using namespace std;
 using namespace lio;
 
-main(int argc, char** argv) {
+main(int argc, char **argv)
+{
   ros::init(argc, argv, "imu_pub_node");
 
   ros::NodeHandle nh("~");
@@ -34,9 +35,6 @@ main(int argc, char** argv) {
   //ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
   Visualizer visualizer(nh);
 
-  tf::TransformBroadcaster br;
-  tf::Transform transform;
-
   ros::Rate loop_rate(20);
   Param params;
   IMU imuGen(params);
@@ -44,7 +42,7 @@ main(int argc, char** argv) {
   string model_path;
   nh.getParam("model_path", model_path);
   FeatureGenerator feature_generator(model_path);
-  std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> > features;
+  std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> features;
 
   sensor_msgs::Imu imu_msg;
   nav_msgs::Path path_gt_msg;
@@ -61,26 +59,33 @@ main(int argc, char** argv) {
   std::string str = "published_points.txt";
   save_points.open(str.c_str());
 
-  std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d> > points = feature_generator.getPoints();
-  std::vector<std::pair<Eigen::Vector4d, Eigen::Vector4d>, Eigen::aligned_allocator<std::pair<Eigen::Vector4d, Eigen::Vector4d>>> lines = feature_generator.getLines();
+  std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d>> points = feature_generator.getPoints();
+  std::vector<std::pair<Eigen::Vector4d, Eigen::Vector4d>, Eigen::aligned_allocator<std::pair<Eigen::Vector4d, Eigen::Vector4d>>>
+      lines = feature_generator.getLines();
   visualizer.AddPoints(points);
   visualizer.AddLines(lines);
   // save_points.open(str.c_str());
-  while (ros::ok()) {
+
+  while (ros::ok())
+  {
     ros::Time time_now(begin + t);
+    MotionData data = imuGen.MotionModel(t);
+    Eigen::Quaterniond q(data.Rwb);
+
+    // publish marker
     visualizer.PublishMarker(time_now);
 
-    imu_msg.header.stamp = time_now;
-    imu_msg.header.frame_id = "world";
-    gps.header.stamp = time_now;
-    gps.header.frame_id = "world";
-
-    MotionData data = imuGen.MotionModel(t);
+    // publish cam frame & body frame
     Eigen::Matrix4d Twc = Eigen::Matrix4d::Identity();
+    Eigen::Matrix4d Twb = Eigen::Matrix4d::Identity();
     Twc.block<3, 3>(0, 0) = data.Rwb * params.R_bc;
     Twc.block<3, 1>(0, 3) = data.twb + data.Rwb * params.t_bc;
-    
-    Eigen::Quaterniond q(data.Rwb);
+    Twb.block<3, 3>(0, 0) = data.Rwb;
+    Twb.block<3, 1>(0, 3) = data.twb;
+    visualizer.PublishCamFrame(time_now, Twc);
+    visualizer.PublishBodyFrame(time_now, Twb);
+
+    // publish ground truth msg
     geometry_msgs::Pose pose;
     pose.position.x = data.twb(0);
     pose.position.y = data.twb(1);
@@ -90,32 +95,20 @@ main(int argc, char** argv) {
     pose.orientation.z = q.z();
     pose.orientation.w = q.w();
     geometry_msgs::PoseStamped pose_stamped;
-    pose_stamped.header = imu_msg.header;
+    pose_stamped.header.stamp = time_now;
     pose_stamped.header.frame_id = "world";
     pose_stamped.pose = pose;
     path_gt_msg.header.stamp = time_now;
     path_gt_msg.header.frame_id = "world";
     path_gt_msg.poses.push_back(pose_stamped);
-
-    transform.setOrigin( tf::Vector3(data.twb(0), data.twb(1), data.twb(2)) );
-    tf::Quaternion tf_q(q.x(), q.y(), q.z(), q.w());
-    transform.setRotation(tf_q);
-
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "body_frame"));
-
-    Eigen::Vector3d twc = Twc.block<3, 1>(0, 3);
-    Eigen::Quaterniond qwc(Twc.block<3, 3>(0, 0));
-    transform.setOrigin( tf::Vector3(twc(0), twc(1), twc(2)) );
-    tf::Quaternion tf_qwc(qwc.x(), qwc.y(), qwc.z(), qwc.w());
-    transform.setRotation(tf_qwc);
-
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "cam_frame"));
+    gt_path_pub.publish(path_gt_msg);
 
     imuGen.addIMUnoise(data);
 
-    // Eigen::Quaterniond q(data.Rwb);
-    //四元数位姿
-    imu_msg.orientation.x = t;  // q.x();
+    // publish noisy imu data
+    imu_msg.header.stamp = time_now;
+    imu_msg.header.frame_id = "world";
+    imu_msg.orientation.x = t; // q.x();
     imu_msg.orientation.y = q.y();
     imu_msg.orientation.z = q.z();
     imu_msg.orientation.w = q.w();
@@ -127,27 +120,21 @@ main(int argc, char** argv) {
     imu_msg.angular_velocity.x = data.imu_gyro(0);
     imu_msg.angular_velocity.y = data.imu_gyro(1);
     imu_msg.angular_velocity.z = data.imu_gyro(2);
-
-    //ROS_INFO("pub imu_msg time : %f", imu_msg.header.stamp.toSec());
-    save_points << t << " " << q.w() << " " << q.x() << " " << q.y() << " "
-                << q.z() << " " << data.twb(0) << " " << data.twb(1) << " "
-                << data.twb(2) << " " << data.imu_gyro(0) << " "
-                << data.imu_gyro(1) << " " << data.imu_gyro(2) << " "
-                << data.imu_acc(0) << " " << data.imu_acc(1) << " "
-                << data.imu_acc(2) << " " << 0 << " " << 0 << " " << 0 << " "
-                << 0 << " " << 0 << " " << 0 << " " << std::endl;
-
     imu_pub.publish(imu_msg);
-    gt_path_pub.publish(path_gt_msg);
+    //ROS_INFO("pub imu_msg time : %f", imu_msg.header.stamp.toSec());
 
-    pub_feature_step+= 10;
-    if (pub_feature_step == params.imu_frequency) {
+
+    pub_feature_step += 10;
+    if (pub_feature_step == params.imu_frequency)
+    {
+      // publish cam features 
       features = feature_generator.featureObservation(Twc);
       CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
       feature_msg_ptr->header.stamp = time_now;
       //std::cout << t << " Twc " << Twc << std::endl;
       std::cout << "observation size " << features.size() << std::endl;
-      for (int i = 0; i < features.size(); ++i) {
+      for (int i = 0; i < features.size(); ++i)
+      {
         feature_msg_ptr->features.push_back(FeatureMeasurement());
         feature_msg_ptr->features[i].id = i;
         feature_msg_ptr->features[i].u0 = features[i](0);
@@ -157,7 +144,10 @@ main(int argc, char** argv) {
         //std::cout << "features " << features[i].transpose() << std::endl;
       }
       feature_pub.publish(feature_msg_ptr);
-      // gps data
+
+      // publish gps data
+      gps.header.stamp = time_now;
+      gps.header.frame_id = "world";
       gps.latitude = data.twb(0);
       gps.longitude = data.twb(1);
       gps.altitude = data.twb(2);
@@ -171,15 +161,22 @@ main(int argc, char** argv) {
       path_gps_msg.poses.push_back(pose_stamped);
       gps_pub.publish(gps);
       gps_path_pub.publish(path_gps_msg);
+
       pub_feature_step = 0;
     }
 
+    save_points << t << " " << q.w() << " " << q.x() << " " << q.y() << " "
+                << q.z() << " " << data.twb(0) << " " << data.twb(1) << " "
+                << data.twb(2) << " " << data.imu_gyro(0) << " "
+                << data.imu_gyro(1) << " " << data.imu_gyro(2) << " "
+                << data.imu_acc(0) << " " << data.imu_acc(1) << " "
+                << data.imu_acc(2) << " " << 0 << " " << 0 << " " << 0 << " "
+                << 0 << " " << 0 << " " << 0 << " " << std::endl;
     //读取和更新ROS topics，如果没有spinonce()或spin()，节点不会发布消息。
     ros::spinOnce();
 
     t += 1.0 / params.imu_frequency;
     loop_rate.sleep();
-
   }
   return 0;
   ros::spin();
