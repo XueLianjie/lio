@@ -24,6 +24,7 @@
 #include "nav_msgs/Odometry.h"
 #include "param.h"
 #include "ros/ros.h"
+#include "sensor_msgs/Imu.h"
 #include "sensor_msgs/NavSatFix.h"
 
 using namespace std;
@@ -32,30 +33,25 @@ using namespace Eigen;
 #define MID_INTEGRATION
 
 bool initialize_flag = false;
+vector<sensor_msgs::Imu> imuBuffer;
 const int CheckInitializeNum = 20;
 
 // state variables
 Eigen::Quaterniond q_wi;
-Eigen::Vector3d& position = msckf_vio::state_server.imu_state.position;
-Eigen::Vector3d& velocity = msckf_vio::state_server.imu_state.velocity;
-Eigen::Vector3d& acc_bias = msckf_vio::state_server.imu_state.acc_bias;
-Eigen::Vector3d& gyro_bias = msckf_vio::state_server.imu_state.gyro_bias;
-Eigen::Quaterniond& orientation = msckf_vio::state_server.imu_state.orientation;
-Eigen::Vector3d acc_0, gyro_0;
-
+Eigen::Vector3d p_0, v_0, ba_0, bg_0, acc_0, gyro_0;
+Eigen::Quaterniond q_0;
 Eigen::Vector3d gravity_w(0, 0, -9.81);
 Eigen::Matrix<double, 15, 15> CovX = Eigen::Matrix<double, 15, 15>::Identity();
-// msckf_vio::IMUState imu_state;
+// IMUState imu_state;
 
-msckf_vio::StateIDType msckf_vio::IMUState::next_id = 0;
-double msckf_vio::IMUState::gyro_noise = 0.001;
-double msckf_vio::IMUState::acc_noise = 0.01;
-double msckf_vio::IMUState::gyro_bias_noise = 0.001;
-double msckf_vio::IMUState::acc_bias_noise = 0.01;
-Eigen::Vector3d msckf_vio::IMUState::gravity =
+StateIDType IMUState::next_id = 0;
+double IMUState::gyro_noise = 0.001;
+double IMUState::acc_noise = 0.01;
+double IMUState::gyro_bias_noise = 0.001;
+double IMUState::acc_bias_noise = 0.01;
+Eigen::Vector3d IMUState::gravity =
     Eigen::Vector3d(0, 0, -GRAVITY_ACCELERATION);
-Eigen::Isometry3d msckf_vio::IMUState::T_imu_body =
-    Eigen::Isometry3d::Identity();
+Eigen::Isometry3d IMUState::T_imu_body = Eigen::Isometry3d::Identity();
 
 ros::Publisher odom_pub;
 ros::Publisher path_pub;
@@ -69,57 +65,29 @@ Eigen::Matrix3d toSkewMatrix(const Eigen::Vector3d& vec) {
   return skew_matrix;
 }
 
-void publish(const sensor_msgs::NavSatFixConstPtr& msg) {
-  nav_msgs::Odometry odometry;
-  odometry.header = msg->header;
-  odometry.header.frame_id = "world";
-  odometry.pose.pose.position.x = position.x();
-  odometry.pose.pose.position.y = position.y();
-  odometry.pose.pose.position.z = position.z();
-  odometry.pose.pose.orientation.x = orientation.x();
-  odometry.pose.pose.orientation.y = orientation.y();
-  odometry.pose.pose.orientation.z = orientation.z();
-  odometry.pose.pose.orientation.w = orientation.w();
-  odometry.twist.twist.linear.x = velocity.x();
-  odometry.twist.twist.linear.y = velocity.y();
-  odometry.twist.twist.linear.z = velocity.z();
-  odom_pub.publish(odometry);
-
-  geometry_msgs::PoseStamped pose_stamped;
-  pose_stamped.header = msg->header;
-  pose_stamped.header.frame_id = "world";
-  pose_stamped.pose = odometry.pose.pose;
-
-  path.header = msg->header;
-  path.header.frame_id = "world";
-  path.poses.push_back(pose_stamped);
-  path_pub.publish(path);
-  return;
-}
-
 bool staticInitialize() {
   Eigen::Vector3d sum_acc = Eigen::Vector3d::Zero();
   Eigen::Vector3d sum_gyro = Eigen::Vector3d::Zero();
   Eigen::Vector3d m_acc, m_gyro;
 
-  for (auto imu_msg : msckf_vio::imu_msg_buffer) {
+  for (auto imu_msg : imuBuffer) {
     tf::vectorMsgToEigen(imu_msg.linear_acceleration, m_acc);
     tf::vectorMsgToEigen(imu_msg.angular_velocity, m_gyro);
     sum_acc += m_acc;
     sum_gyro += m_gyro;
   }
-  gyro_bias = sum_gyro / msckf_vio::imu_msg_buffer.size();
-  cout << "gyro_bias " << gyro_bias << endl;
-  Eigen::Vector3d gravity_imu = sum_acc / msckf_vio::imu_msg_buffer.size();
+  bg_0 = sum_gyro / imuBuffer.size();
+  cout << "bg_0 " << bg_0 << endl;
+  Eigen::Vector3d gravity_imu = sum_acc / imuBuffer.size();
 
   double gravity_norm = gravity_imu.norm();
   gravity_w = Eigen::Vector3d(0.0, 0.0,
                               -gravity_norm);  // gravity or acc in world fram ?
 
-  orientation = Eigen::Quaterniond::FromTwoVectors(gravity_imu, -gravity_w);
-  acc_bias = Eigen::Vector3d::Zero();
-  position = Eigen::Vector3d::Zero();
-  velocity = Eigen::Vector3d::Zero();
+  q_0 = Eigen::Quaterniond::FromTwoVectors(gravity_imu, -gravity_w);
+  ba_0 = Eigen::Vector3d::Zero();
+  p_0 = Eigen::Vector3d::Zero();
+  v_0 = Eigen::Vector3d::Zero();
   acc_0 = m_acc;
   gyro_0 = m_gyro;
   return true;
@@ -129,15 +97,15 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   double imu_time_s = msg->header.stamp.toSec();
   ROS_INFO("imu time stamp: %f ", imu_time_s);
   // cout << "imu time stamp: %f " << imu_time_s << endl;
-  // cout << "acc: \n " << msg->linear_acceleration << endl;
-  // cout << "gyro: \n " << msg->angular_velocity << endl;
+  cout << "acc: \n " << msg->linear_acceleration << endl;
+  cout << "gyro: \n " << msg->angular_velocity << endl;
 
   // if (!initialize_flag) {
-  //   msckf_vio::imu_msg_buffer.push_back(*msg);
-  //   if (msckf_vio::imu_msg_buffer.size() == CheckInitializeNum) {
+  //   imuBuffer.push_back(*msg);
+  //   if (imuBuffer.size() == CheckInitializeNum) {
   //     if (!staticInitialize()) {
-  //       // msckf_vio::imu_msg_buffer.pop_front();
-  //       msckf_vio::imu_msg_buffer.erase(msckf_vio::imu_msg_buffer.begin());
+  //       // imuBuffer.pop_front();
+  //       imuBuffer.erase(imuBuffer.begin());
   //       return;
   //     } else {
   //       initialize_flag = true;
@@ -157,28 +125,28 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     Param params;
     IMU imuGen(params);
     MotionData data = imuGen.MotionModel(msg->orientation.x);
-    orientation = Eigen::Quaterniond(data.Rwb);
-    // orientation.x() = q.x();
-    // orientation.y() = msg->orientation.y;
-    // orientation.z() = msg->orientation.z;
-    // orientation.w() = msg->orientation.w;
-    gyro_bias = Eigen::Vector3d::Zero();
+    q_0 = Eigen::Quaterniond(data.Rwb);
+    // q_0.x() = q.x();
+    // q_0.y() = msg->orientation.y;
+    // q_0.z() = msg->orientation.z;
+    // q_0.w() = msg->orientation.w;
+    bg_0 = Eigen::Vector3d::Zero();
 
-    acc_bias = Eigen::Vector3d::Zero();
-    position = data.twb;
-    velocity = data.imu_velocity;
+    ba_0 = Eigen::Vector3d::Zero();
+    p_0 = data.twb;
+    v_0 = data.imu_velocity;
     tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
     tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
 
-    // orientation.x() = msg->orientation.x;
-    // orientation.y() = msg->orientation.y;
-    // orientation.z() = msg->orientation.z;
-    // orientation.w() = msg->orientation.w;
-    // gyro_bias = Eigen::Vector3d::Zero();
+    // q_0.x() = msg->orientation.x;
+    // q_0.y() = msg->orientation.y;
+    // q_0.z() = msg->orientation.z;
+    // q_0.w() = msg->orientation.w;
+    // bg_0 = Eigen::Vector3d::Zero();
 
-    // acc_bias = Eigen::Vector3d::Zero();
-    // position = Eigen::Vector3d(20, 5, 5);
-    // velocity = Eigen::Vector3d(0, 6.28319, 3.14159);
+    // ba_0 = Eigen::Vector3d::Zero();
+    // p_0 = Eigen::Vector3d(20, 5, 5);
+    // v_0 = Eigen::Vector3d(0, 6.28319, 3.14159);
     // tf::vectorMsgToEigen(msg->linear_acceleration, acc_0);
     // tf::vectorMsgToEigen(msg->angular_velocity, gyro_0);
 
@@ -191,32 +159,21 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
     CovX.block<3, 3>(6, 6) = 1.0 * Eigen::Matrix3d::Identity();
     CovX.block<3, 3>(9, 9) = 0.0001 * Eigen::Matrix3d::Identity();
     CovX.block<3, 3>(12, 12) = 0.0001 * Eigen::Matrix3d::Identity();
+
+#ifdef MID_INTEGRATION
     return;
+#endif
   }
+  double dt = 1.0 / 200.0;
+  Eigen::Vector3d m_acc, m_gyro;
+  tf::vectorMsgToEigen(msg->linear_acceleration, m_acc);
+  tf::vectorMsgToEigen(msg->angular_velocity, m_gyro);
 
-  // // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
-  // Eigen::Quaterniond dq;
-  // Eigen::Vector3d dtheta_half = m_gyro * dt / 2.0;
-  // dq.w() = 1;
-  // dq.x() = dtheta_half.x();
-  // dq.y() = dtheta_half.y();
-  // dq.z() = dtheta_half.z();
-  // dq.normalize();
-  // //　imu 动力学模型　参考svo预积分论文
-  // Eigen::Vector3d acc_w = orientation * (m_acc) +
-  //                         gravity_w;  // aw = Rwb * ( acc_body - acc_bias ) +
-  //                         gw
-  // orientation = orientation * dq;
-  // position = position + velocity * dt + 0.5 * dt * dt * acc_w;
-  // velocity = velocity + acc_w * dt;
+#ifdef MID_INTEGRATION
 
-  return;
-}
-
-void predictNewState(const double& dt, const Vector3d& m_gyro,
-                     const Vector3d& m_acc) {
-  Eigen::Vector3d un_acc_0 = orientation * (acc_0 - acc_bias) + gravity_w;
-  Eigen::Vector3d un_gyro = 0.5 * (gyro_0 + m_gyro) - gyro_bias;
+  Eigen::Vector3d un_acc_0 = q_0 * (acc_0 - ba_0) + gravity_w;
+  Eigen::Vector3d un_gyro =
+      0.5 * (gyro_0 + m_gyro) - bg_0;  // calculate average gyro
   Eigen::Quaterniond dq_tmp;
   dq_tmp.x() =
       un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
@@ -224,34 +181,23 @@ void predictNewState(const double& dt, const Vector3d& m_gyro,
   dq_tmp.z() = un_gyro.z() * dt / 2.0;
   dq_tmp.w() = 1.0;
   dq_tmp.normalize();
-  orientation = orientation * dq_tmp;
-  Eigen::Vector3d un_acc_1 = orientation * (m_acc - acc_bias) + gravity_w;
+  q_0 = q_0 * dq_tmp;
+  Eigen::Vector3d un_acc_1 = q_0 * (m_acc - ba_0) + gravity_w;
   Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-  position = position + dt * velocity + 0.5 * un_acc * dt * dt;
-  velocity = velocity + dt * un_acc;  // this need to be calculated after p0
-  // acc_bias = acc_bias;
-  // gyro_bias = gyro_bias;
+  p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
+  v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
+  // ba_0 = ba_0;
+  // bg_0 = bg_0;
   acc_0 = m_acc;
   gyro_0 = m_gyro;
-  return;
-}
 
-void processModel(const double& time, const Vector3d& m_gyro,
-                  const Vector3d& m_acc) {
-  // double dt = 1.0 / 200.0;
-  // Eigen::Vector3d m_acc, m_gyro;
-  // tf::vectorMsgToEigen(msg->linear_acceleration, m_acc);
-  // tf::vectorMsgToEigen(msg->angular_velocity, m_gyro);
-  double dt = 1.0 / 200.0;//time - msckf_vio::state_server.imu_state.time;
-
-  predictNewState(dt, m_gyro, m_acc);
   // Covariance Matrix
-  Eigen::Matrix3d R(orientation);
+  Eigen::Matrix3d R(q_0);
   Eigen::Matrix<double, 15, 15> Fx = Eigen::Matrix<double, 15, 15>::Identity();
   Fx.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity() * dt;
-  Fx.block<3, 3>(3, 6) = -R * toSkewMatrix(m_acc - gravity_w) * dt;
+  Fx.block<3, 3>(3, 6) = -R * toSkewMatrix(un_acc - gravity_w) * dt;
   Fx.block<3, 3>(3, 9) = -R * dt;
-  Eigen::Vector3d delta_theta = m_gyro * dt;
+  Eigen::Vector3d delta_theta = un_gyro * dt;
   if (delta_theta.norm() > 1e-12) {
     Fx.block<3, 3>(6, 6) =
         Eigen::AngleAxisd(delta_theta.norm(), delta_theta.normalized())
@@ -269,47 +215,58 @@ void processModel(const double& time, const Vector3d& m_gyro,
 
   Eigen::Matrix<double, 12, 12> Qi = Eigen::Matrix<double, 12, 12>::Zero();
   Qi.block<3, 3>(0, 0) =
-      dt * dt * msckf_vio::IMUState::acc_noise * Eigen::Matrix3d::Identity();
+      dt * dt * IMUState::acc_noise * Eigen::Matrix3d::Identity();
   Qi.block<3, 3>(3, 3) =
-      dt * dt * msckf_vio::IMUState::gyro_noise * Eigen::Matrix3d::Identity();
+      dt * dt * IMUState::gyro_noise * Eigen::Matrix3d::Identity();
   Qi.block<3, 3>(6, 6) =
-      dt * msckf_vio::IMUState::acc_bias_noise * Eigen::Matrix3d::Identity();
+      dt * IMUState::acc_bias_noise * Eigen::Matrix3d::Identity();
   Qi.block<3, 3>(9, 9) =
-      dt * msckf_vio::IMUState::gyro_bias_noise * Eigen::Matrix3d::Identity();
+      dt * IMUState::gyro_bias_noise * Eigen::Matrix3d::Identity();
 
   CovX = Fx * CovX * Fx.transpose() + Fi * Qi * Fi.transpose();
 
-  msckf_vio::state_server.imu_state.time = time;
-  return;
-}
+#else
 
-void batchImuProcessing(const double& time_bound) {
-  // Counter how many IMU msgs in the buffer are used.
-  int used_imu_msg_cntr = 0;
+  // delta_q = [1 , 1/2 * thetax , 1/2 * theta_y, 1/2 * theta_z]
+  Eigen::Quaterniond dq;
+  Eigen::Vector3d dtheta_half = m_gyro * dt / 2.0;
+  dq.w() = 1;
+  dq.x() = dtheta_half.x();
+  dq.y() = dtheta_half.y();
+  dq.z() = dtheta_half.z();
+  dq.normalize();
+  //　imu 动力学模型　参考svo预积分论文
+  Eigen::Vector3d acc_w =
+      q_0 * (m_acc) + gravity_w;  // aw = Rwb * ( acc_body - acc_bias ) + gw
+  q_0 = q_0 * dq;
+  p_0 = p_0 + v_0 * dt + 0.5 * dt * dt * acc_w;
+  v_0 = v_0 + acc_w * dt;
 
-  for (const auto& imu_msg : msckf_vio::imu_msg_buffer) {
-    double imu_time = imu_msg.header.stamp.toSec();
-    if (imu_time < msckf_vio::state_server.imu_state.time) {
-      ++used_imu_msg_cntr;
-      continue;
-    }
-    if (imu_time > time_bound) break;
-    // Convert the msgs.
-    Vector3d m_gyro, m_acc;
-    tf::vectorMsgToEigen(imu_msg.angular_velocity, m_gyro);
-    tf::vectorMsgToEigen(imu_msg.linear_acceleration, m_acc);
+#endif
+  nav_msgs::Odometry odometry;
+  odometry.header = msg->header;
+  odometry.header.frame_id = "world";
+  odometry.pose.pose.position.x = p_0.x();
+  odometry.pose.pose.position.y = p_0.y();
+  odometry.pose.pose.position.z = p_0.z();
+  odometry.pose.pose.orientation.x = q_0.x();
+  odometry.pose.pose.orientation.y = q_0.y();
+  odometry.pose.pose.orientation.z = q_0.z();
+  odometry.pose.pose.orientation.w = q_0.w();
+  odometry.twist.twist.linear.x = v_0.x();
+  odometry.twist.twist.linear.y = v_0.y();
+  odometry.twist.twist.linear.z = v_0.z();
+  odom_pub.publish(odometry);
 
-    // Execute process model.
-    processModel(imu_time, m_gyro, m_acc);
-    ++used_imu_msg_cntr;
-  }
-  // Set the state ID for the new IMU state.
-  msckf_vio::state_server.imu_state.id = msckf_vio::IMUState::next_id++;
+  geometry_msgs::PoseStamped pose_stamped;
+  pose_stamped.header = msg->header;
+  pose_stamped.header.frame_id = "world";
+  pose_stamped.pose = odometry.pose.pose;
 
-  // Remove all used IMU msgs.
-  msckf_vio::imu_msg_buffer.erase(
-      msckf_vio::imu_msg_buffer.begin(),
-      msckf_vio::imu_msg_buffer.begin() + used_imu_msg_cntr);
+  path.header = msg->header;
+  path.header.frame_id = "world";
+  path.poses.push_back(pose_stamped);
+  path_pub.publish(path);
 
   return;
 }
@@ -317,32 +274,28 @@ void batchImuProcessing(const double& time_bound) {
 void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
   ROS_INFO("gps timestamp %f,  %f, %f, %f", gps_msg->header.stamp.toSec(),
            gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
-  if (!initialize_flag) {
-    return;
-  }
-  batchImuProcessing(gps_msg->header.stamp.toSec());
 
   Eigen::Vector3d gps(gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
   Eigen::Matrix<double, 3, 15> Hx = Eigen::Matrix<double, 3, 15>::Zero();
   Hx.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
   Eigen::Vector3d tig = Eigen::Vector3d::Zero();
-  Hx.block<3, 3>(0, 6) = -Eigen::Matrix3d(orientation) * toSkewMatrix(tig);
+  Hx.block<3, 3>(0, 6) = -Eigen::Matrix3d(q_0) * toSkewMatrix(tig);
 
   double residual[3] = {0.0, 0.0, 0.0};
   Eigen::Map<Eigen::Vector3d> residual_vec(residual);
-  residual_vec = gps - position;
+  residual_vec = gps - p_0;
   Eigen::Map<const Eigen::Matrix3d> V(gps_msg->position_covariance.data());
   cout << "obser cov " << V << endl;
   const Eigen::MatrixXd K =
       CovX * Hx.transpose() * (Hx * CovX * Hx.transpose() + V).inverse();
   Eigen::VectorXd delta_x = K * residual_vec;
-  position += delta_x.block<3, 1>(0, 0);
-  velocity += delta_x.block<3, 1>(3, 0);
-  acc_bias += delta_x.block<3, 1>(9, 0);
-  gyro_bias += delta_x.block<3, 1>(12, 0);
+  p_0 += delta_x.block<3, 1>(0, 0);
+  v_0 += delta_x.block<3, 1>(3, 0);
+  ba_0 += delta_x.block<3, 1>(9, 0);
+  bg_0 += delta_x.block<3, 1>(12, 0);
 
   if (delta_x.block<3, 1>(6, 0).norm() > 1e-12) {
-    orientation *= Eigen::Quaterniond(
+    q_0 *= Eigen::Quaterniond(
         Eigen::AngleAxisd(delta_x.block<3, 1>(6, 0).norm(),
                           delta_x.block<3, 1>(6, 0).normalized())
             .toRotationMatrix());
@@ -356,12 +309,10 @@ void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
   // delta_q.z() = delta_x(8);
   // delta_x.w() = 1.0;
   // delta_q =  delta_q.normalized();  //  normaliz
-  // orientation = orientation * delta_q;
+  // q_0 = q_0 * delta_q;
 
   Eigen::MatrixXd I_KH = Eigen::Matrix<double, 15, 15>::Identity() - K * Hx;
   CovX = I_KH * CovX * I_KH.transpose() + K * V * K.transpose();
-
-  publish(gps_msg);
 }
 /*
 void stateAugmentation(const double& time) {
@@ -431,15 +382,13 @@ void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
   if (!initialize_flag) {
     return;
   }
-  if (msckf_vio::is_first_img) {
-    msckf_vio::is_first_img = false;
-    msckf_vio::state_server.imu_state.time = msg->header.stamp.toSec();
-  }
+
   ros::Time start_time = ros::Time::now();
   // Augment the state vector.
   start_time = ros::Time::now();
-  // stateAugmentation(msg->header.stamp.toSec());
-  double state_augmentation_time = (ros::Time::now() - start_time).toSec();
+  //stateAugmentation(msg->header.stamp.toSec());
+  double state_augmentation_time = (
+  ros::Time::now()-start_time).toSec();
 
   // Add new observations for existing features or new
   // features in the map server.
@@ -454,6 +403,8 @@ void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
   // removeLostFeatures();
   // double remove_lost_features_time = (
   // ros::Time::now()-start_time).toSec();
+
+
 }
 
 main(int argc, char** argv) {
@@ -466,9 +417,8 @@ main(int argc, char** argv) {
   path_pub = nh.advertise<nav_msgs::Path>("path", 1000);
 
   ros::Subscriber imu_sub = nh.subscribe("/imu_sim", 1000, imuCallback);
-  ros::Subscriber gps_sub = nh.subscribe("/gps", 100, gpsCallback);
-  ros::Subscriber feature_sub =
-      nh.subscribe("/features0", 100, featureCallback);
+  ros::Subscriber gps_sub = nh.subscribe("/gps0", 100, gpsCallback);
+  ros::Subscriber feature_sub = nh.subscribe("/features", 100, featureCallback);
 
   // ros::Rate rate(10);
 
