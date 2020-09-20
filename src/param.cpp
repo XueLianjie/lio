@@ -13,5 +13,5 @@ Param::Param()
       -1, 0, 0,
       0, 1, 0;
   R_bc = R;
-  t_bc = Eigen::Vector3d(0.5, 0.4, 0.3);
+  t_bc = Eigen::Vector3d(-0.02, -0.06, 0.001);
 }

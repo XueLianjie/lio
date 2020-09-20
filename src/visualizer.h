@@ -7,6 +7,8 @@
 #include <Eigen/Eigen>
 #include "lio/CameraMeasurement.h"
 #include "lio/FeatureMeasurement.h"
+#include <sensor_msgs/PointCloud.h>
+
 using namespace lio;
 
 class Visualizer
@@ -87,6 +89,14 @@ public:
         feature_lines_list_.color.r = 1.0;
         feature_lines_list_.color.g = 1.0;
         feature_lines_list_.color.a = 1.0;
+
+        feature_points_cloud_.reset(new sensor_msgs::PointCloud);
+        feature_points_cloud_->header.frame_id = "/world";
+        pub_img = nh_.advertise<sensor_msgs::PointCloud>("img_feature", 1000);
+        velocity_flag = false;
+        // for(int i = 0; i < 18; ++i)
+        // last_features_.push_back(Eigen::Vector2d(0.0, 0.0));
+
     }
 
     Visualizer(const Visualizer &vis) = delete;
@@ -174,12 +184,21 @@ public:
     {
         CameraMeasurementPtr feature_msg_ptr(new CameraMeasurement);
         feature_msg_ptr->header.stamp = stamp;
+        feature_points_cloud_->header.stamp = stamp;
 
         feature_points_.header.stamp = stamp;
         feature_points_.points.clear();
         //std::cout << t << " Twc " << Twc << std::endl;
         std::cout << "observation size " << features.size() << std::endl;
         geometry_msgs::Point p;
+        geometry_msgs::Point32 p32;
+
+        sensor_msgs::ChannelFloat32 id_of_point;
+        sensor_msgs::ChannelFloat32 u_of_point;
+        sensor_msgs::ChannelFloat32 v_of_point;
+        sensor_msgs::ChannelFloat32 velocity_x_of_point;
+        sensor_msgs::ChannelFloat32 velocity_y_of_point;
+        feature_points_cloud_->points.clear();
 
         for (int i = 0; i < features.size(); ++i)
         {
@@ -193,9 +212,46 @@ public:
             p.x = features[i](0);
             p.y = features[i](1);
             p.z = 1.0;
-
             feature_points_.points.push_back(p);
+
+                    id_of_point.values.push_back(i);
+
+                    p32.x = features[i](0);
+                    p32.y = features[i](1);
+                    p32.z = 1;
+                    feature_points_cloud_->points.push_back(p32);
+
+                    float ux = 460 * p32.x + 376;
+                    float uy = 460 * p32.y + 240;
+                    u_of_point.values.push_back(ux);
+                    v_of_point.values.push_back(uy);
+
+            if(!velocity_flag)
+            {
+                    velocity_x_of_point.values.push_back(0.0);
+                    velocity_y_of_point.values.push_back(0.0);
+
+            }
+            else
+            {
+                    velocity_x_of_point.values.push_back(20.0 * (- last_features_[i][0] + features[i](0) ) );
+                    velocity_y_of_point.values.push_back(20.0 * (- last_features_[i][1] + features[i](1) ) );
+
+            }
+
         }
+        velocity_flag = true;
+        last_features_ = features;
+
+        feature_points_cloud_->channels.push_back(id_of_point);
+        feature_points_cloud_->channels.push_back(u_of_point);
+        feature_points_cloud_->channels.push_back(v_of_point);
+        feature_points_cloud_->channels.push_back(velocity_x_of_point);
+        feature_points_cloud_->channels.push_back(velocity_y_of_point);
+        ROS_INFO("publish %f ", feature_points_cloud_->header.stamp.toSec());
+
+        pub_img.publish(feature_points_cloud_);
+
         features_pub_.publish(feature_msg_ptr);
         marker_pub_.publish(feature_points_);
     }
@@ -227,7 +283,11 @@ private:
     visualization_msgs::Marker feature_points_, feature_lines_list_;
     ros::Publisher marker_pub_;
     ros::Publisher features_pub_;
+    ros::Publisher pub_img; // = n.advertise<sensor_msgs::PointCloud>("feature", 1000);
 
+    sensor_msgs::PointCloudPtr feature_points_cloud_; //(new sensor_msgs::PointCloud);
+    std::vector<Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d>> last_features_;
+    bool velocity_flag;
     ros::NodeHandle nh_;
     tf::TransformBroadcaster br_;
     tf::Transform transform_;

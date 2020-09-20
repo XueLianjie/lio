@@ -34,7 +34,7 @@ main(int argc, char **argv)
   //ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("visualization_marker", 10);
   Visualizer visualizer(nh);
 
-  ros::Rate loop_rate(10);
+  ros::Rate loop_rate(200);
   Param params;
   IMU imuGen(params);
 
@@ -100,7 +100,7 @@ main(int argc, char **argv)
     path_gt_msg.poses.push_back(pose_stamped);
     gt_path_pub.publish(path_gt_msg);
 
-    imuGen.addIMUnoise(data);
+    //imuGen.addIMUnoise(data);
 
     // publish noisy imu data
     imu_msg.header.stamp = time_now;
