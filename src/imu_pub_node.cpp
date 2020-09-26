@@ -120,7 +120,7 @@ main(int argc, char **argv)
     imu_pub.publish(imu_msg);
     //ROS_INFO("pub imu_msg time : %f", imu_msg.header.stamp.toSec());
 
-    pub_feature_step += 10;
+    pub_feature_step += 20;
     if (pub_feature_step == params.imu_frequency)
     {
       // publish cam features
