@@ -1,6 +1,6 @@
 <launch>
 
-
+    <!-- <node pkg="package_name" type="executable_name" name="node_name" /> -->
     <node name="imu_pub_node" pkg="lio" type="imu_pub_node" output="screen">
         <param name="model_path" type="string" value="/home/xue/Documents/lio_ws/src/lio/house_model/house.txt" />
     </node>

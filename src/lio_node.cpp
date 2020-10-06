@@ -59,18 +59,21 @@ nav_msgs::Path path;
 
 ofstream ofile;
 
-Eigen::Matrix3d toSkewMatrix(const Eigen::Vector3d& vec) {
+Eigen::Matrix3d toSkewMatrix(const Eigen::Vector3d &vec)
+{
   Eigen::Matrix3d skew_matrix = Eigen::Matrix3d::Zero();
   skew_matrix << 0.0, -vec(2), vec(1), vec(2), 0.0, -vec(0), -vec(1), vec(0), 0;
   return skew_matrix;
 }
 
-bool staticInitialize() {
+bool staticInitialize()
+{
   Eigen::Vector3d sum_acc = Eigen::Vector3d::Zero();
   Eigen::Vector3d sum_gyro = Eigen::Vector3d::Zero();
   Eigen::Vector3d m_acc, m_gyro;
 
-  for (auto imu_msg : imuBuffer) {
+  for (auto imu_msg : imuBuffer)
+  {
     tf::vectorMsgToEigen(imu_msg.linear_acceleration, m_acc);
     tf::vectorMsgToEigen(imu_msg.angular_velocity, m_gyro);
     sum_acc += m_acc;
@@ -82,7 +85,7 @@ bool staticInitialize() {
 
   double gravity_norm = gravity_imu.norm();
   gravity_w = Eigen::Vector3d(0.0, 0.0,
-                              -gravity_norm);  // gravity or acc in world fram ?
+                              -gravity_norm); // gravity or acc in world fram ?
 
   q_0 = Eigen::Quaterniond::FromTwoVectors(gravity_imu, -gravity_w);
   ba_0 = Eigen::Vector3d::Zero();
@@ -93,7 +96,8 @@ bool staticInitialize() {
   return true;
 }
 
-void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
+void imuCallback(const sensor_msgs::ImuConstPtr &msg)
+{
   double imu_time_s = msg->header.stamp.toSec();
   //ROS_INFO("imu time stamp: %f ", imu_time_s);
   // cout << "imu time stamp: %f " << imu_time_s << endl;
@@ -121,7 +125,8 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
         << " " << msg->linear_acceleration.z << " " << 0 << " " << 0 << " " << 0
         << " " << 0 << " " << 0 << " " << 0 << " " << std::endl;
 
-  if (!initialize_flag) {
+  if (!initialize_flag)
+  {
     Param params;
     IMU imuGen(params);
     MotionData data = imuGen.MotionModel(msg->orientation.x);
@@ -173,10 +178,10 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
 
   Eigen::Vector3d un_acc_0 = q_0 * (acc_0 - ba_0) + gravity_w;
   Eigen::Vector3d un_gyro =
-      0.5 * (gyro_0 + m_gyro) - bg_0;  // calculate average gyro
+      0.5 * (gyro_0 + m_gyro) - bg_0; // calculate average gyro
   Eigen::Quaterniond dq_tmp;
   dq_tmp.x() =
-      un_gyro.x() * dt / 2.0;  // calculate theta / 2 = un_gyro * dt / 2
+      un_gyro.x() * dt / 2.0; // calculate theta / 2 = un_gyro * dt / 2
   dq_tmp.y() = un_gyro.y() * dt / 2.0;
   dq_tmp.z() = un_gyro.z() * dt / 2.0;
   dq_tmp.w() = 1.0;
@@ -185,7 +190,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   Eigen::Vector3d un_acc_1 = q_0 * (m_acc - ba_0) + gravity_w;
   Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
   p_0 = p_0 + dt * v_0 + 0.5 * un_acc * dt * dt;
-  v_0 = v_0 + dt * un_acc;  // this need to be calculated after p0
+  v_0 = v_0 + dt * un_acc; // this need to be calculated after p0
   // ba_0 = ba_0;
   // bg_0 = bg_0;
   acc_0 = m_acc;
@@ -198,12 +203,15 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   Fx.block<3, 3>(3, 6) = -R * toSkewMatrix(un_acc - gravity_w) * dt;
   Fx.block<3, 3>(3, 9) = -R * dt;
   Eigen::Vector3d delta_theta = un_gyro * dt;
-  if (delta_theta.norm() > 1e-12) {
+  if (delta_theta.norm() > 1e-12)
+  {
     Fx.block<3, 3>(6, 6) =
         Eigen::AngleAxisd(delta_theta.norm(), delta_theta.normalized())
             .toRotationMatrix()
             .transpose();
-  } else {
+  }
+  else
+  {
     Fx.block<3, 3>(6, 6) = Eigen::Matrix3d::Identity();
   }
 
@@ -237,7 +245,7 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   dq.normalize();
   //　imu 动力学模型　参考svo预积分论文
   Eigen::Vector3d acc_w =
-      q_0 * (m_acc) + gravity_w;  // aw = Rwb * ( acc_body - acc_bias ) + gw
+      q_0 * (m_acc) + gravity_w; // aw = Rwb * ( acc_body - acc_bias ) + gw
   q_0 = q_0 * dq;
   p_0 = p_0 + v_0 * dt + 0.5 * dt * dt * acc_w;
   v_0 = v_0 + acc_w * dt;
@@ -271,7 +279,8 @@ void imuCallback(const sensor_msgs::ImuConstPtr& msg) {
   return;
 }
 
-void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
+void gpsCallback(const sensor_msgs::NavSatFixConstPtr &gps_msg)
+{
   ROS_INFO("gps timestamp %f,  %f, %f, %f", gps_msg->header.stamp.toSec(),
            gps_msg->latitude, gps_msg->longitude, gps_msg->altitude);
 
@@ -294,7 +303,8 @@ void gpsCallback(const sensor_msgs::NavSatFixConstPtr& gps_msg) {
   ba_0 += delta_x.block<3, 1>(9, 0);
   bg_0 += delta_x.block<3, 1>(12, 0);
 
-  if (delta_x.block<3, 1>(6, 0).norm() > 1e-12) {
+  if (delta_x.block<3, 1>(6, 0).norm() > 1e-12)
+  {
     q_0 *= Eigen::Quaterniond(
         Eigen::AngleAxisd(delta_x.block<3, 1>(6, 0).norm(),
                           delta_x.block<3, 1>(6, 0).normalized())
@@ -377,9 +387,11 @@ void stateAugmentation(const double& time) {
   return;
 }
 */
-void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
+void featureCallback(const lio::CameraMeasurementConstPtr &msg)
+{
   ROS_INFO("received feature msg: %f ", msg->header.stamp.toSec());
-  if (!initialize_flag) {
+  if (!initialize_flag)
+  {
     return;
   }
 
@@ -387,8 +399,7 @@ void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
   // Augment the state vector.
   start_time = ros::Time::now();
   //stateAugmentation(msg->header.stamp.toSec());
-  double state_augmentation_time = (
-  ros::Time::now()-start_time).toSec();
+  double state_augmentation_time = (ros::Time::now() - start_time).toSec();
 
   // Add new observations for existing features or new
   // features in the map server.
@@ -403,11 +414,10 @@ void featureCallback(const lio::CameraMeasurementConstPtr& msg) {
   // removeLostFeatures();
   // double remove_lost_features_time = (
   // ros::Time::now()-start_time).toSec();
-
-
 }
 
-main(int argc, char** argv) {
+main(int argc, char **argv)
+{
   ros::init(argc, argv, "lio_node");
   ofile.open("received_point.txt");
 
