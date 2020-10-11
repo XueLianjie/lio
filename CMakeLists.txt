@@ -195,6 +195,16 @@ add_executable(test_marker_node src/test_marker.cpp
 target_link_libraries(test_marker_node
   ${catkin_LIBRARIES}
 )
+
+add_executable(vio_node vio/vio_node.cpp
+                            vio/estimator.cpp
+
+                            )
+
+target_link_libraries(vio_node
+  ${catkin_LIBRARIES}
+)
+
 #############
 ## Install ##
 #############
