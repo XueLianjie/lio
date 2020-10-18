@@ -96,7 +96,6 @@ public:
         velocity_flag = false;
         // for(int i = 0; i < 18; ++i)
         // last_features_.push_back(Eigen::Vector2d(0.0, 0.0));
-
     }
 
     Visualizer(const Visualizer &vis) = delete;
@@ -214,31 +213,28 @@ public:
             p.z = 1.0;
             feature_points_.points.push_back(p);
 
-                    id_of_point.values.push_back(i);
+            id_of_point.values.push_back(i);
 
-                    p32.x = features[i](0);
-                    p32.y = features[i](1);
-                    p32.z = 1;
-                    feature_points_cloud_->points.push_back(p32);
+            p32.x = features[i](0);
+            p32.y = features[i](1);
+            p32.z = 1;
+            feature_points_cloud_->points.push_back(p32);
 
-                    float ux = 460 * p32.x + 376;
-                    float uy = 460 * p32.y + 240;
-                    u_of_point.values.push_back(ux);
-                    v_of_point.values.push_back(uy);
+            float ux = 460 * p32.x + 376;
+            float uy = 460 * p32.y + 240;
+            u_of_point.values.push_back(ux);
+            v_of_point.values.push_back(uy);
 
-            if(!velocity_flag)
+            if (!velocity_flag)
             {
-                    velocity_x_of_point.values.push_back(0.0);
-                    velocity_y_of_point.values.push_back(0.0);
-
+                velocity_x_of_point.values.push_back(0.0);
+                velocity_y_of_point.values.push_back(0.0);
             }
             else
             {
-                    velocity_x_of_point.values.push_back(20.0 * (- last_features_[i][0] + features[i](0) ) );
-                    velocity_y_of_point.values.push_back(20.0 * (- last_features_[i][1] + features[i](1) ) );
-
+                velocity_x_of_point.values.push_back(20.0 * (-last_features_[i][0] + features[i](0)));
+                velocity_y_of_point.values.push_back(20.0 * (-last_features_[i][1] + features[i](1)));
             }
-
         }
         velocity_flag = true;
         last_features_ = features;

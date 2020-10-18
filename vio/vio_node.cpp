@@ -11,6 +11,7 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud.h>
 #include <tf_conversions/tf_eigen.h>
+#include <eigen_conversions/eigen_msg.h>
 
 using namespace std;
 
@@ -19,7 +20,7 @@ using namespace std;
 //std::condition_variable con;
 mutex m_buf;
 
-queue<ImuData, Eigen::aligned_allocator<ImuData>> imu_que;
+queue<ImuData> imu_que;
 
 queue<sensor_msgs::PointCloudConstPtr> feature_que;
 
@@ -39,11 +40,11 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
     Eigen::Vector3d acc, gyro;
     tf::vectorMsgToEigen(imu_msg->linear_acceleration, acc);
     tf::vectorMsgToEigen(imu_msg->angular_velocity, gyro);
-    imu_que.push_back(ImuData(imu_msg->header.stamp.toSec(), acc, gyro));
+    imu_que.push(ImuData(imu_msg->header.stamp.toSec(), acc, gyro));
     printf("imu_que size: %d \n", imu_que.size());
     if (imu_que.size() > 200 && !vio_estimator.GetInitializeFlag())
     {
-        vector<ImuData, Eigen::aligned_allocator<ImuData>> imu_vec;
+        vector<ImuData> imu_vec;
         while (!imu_que.empty())
         {
             imu_vec.emplace_back(imu_que.front());
@@ -84,8 +85,8 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
     //     return;
     // }
     m_buf.lock();
-    feature_que.push_back(feature_msg);
-    printf("imu_que size: %d \n", imu_que.size());
+    feature_que.push(feature_msg);
+    printf("feature_que size: %d \n", feature_que.size());
 
     m_buf.unlock();
     // con.notify_one();
@@ -149,7 +150,7 @@ void process()
                 break;
             }
 
-            if (imu_que.back()->header.stamp.toSec() < feature_que.front()->header.stamp.toSec())
+            if (imu_que.back().time_stamp_ < feature_que.front()->header.stamp.toSec())
             {
                 m_buf.unlock();
                 break;
@@ -162,10 +163,12 @@ void process()
                 imu_que.pop();
             }
             imu_vec.emplace_back(imu_que.front());
+
             printf("imu time stamp: %f \n", imu_que.front().time_stamp_);
+            imu_que.pop();
 
             sensor_msgs::PointCloudConstPtr feature_ptr = feature_que.front();
-            printf("imu time stamp: %f \n", feature_que.front()->header.stamp.toSec());
+            printf("feature time stamp: %f \n", feature_que.front()->header.stamp.toSec());
             feature_que.pop();
             m_buf.unlock();
 
@@ -188,7 +191,7 @@ void process()
                 image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
             }
 
-            //            estimator.processImage(image, feature_ptr->header);
+            //vio_estimator.processImage(image, feature_ptr->header);
         }
     }
 }
