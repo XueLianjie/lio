@@ -21,7 +21,7 @@ bool Estimator::StaticInitialize(const std::vector<ImuData>& imu_vec)
     }
     printf("finish static initializer! \n");
 
-    std::cout << "imu_vec acc " << imu_vec[imu_vec.size() - 1].acc_ << " gyro " << imu_vec[imu_vec.size() - 1].gyro_ << std::endl;
+    //std::cout << "imu_vec acc " << imu_vec[imu_vec.size() - 1].acc_ << " gyro " << imu_vec[imu_vec.size() - 1].gyro_ << std::endl;
     // bg_0 = sum_gyro / imu_vec.size();
     // Eigen::Vector3d gravity_imu = sum_acc / imu_vec.size();
 
