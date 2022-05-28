@@ -27,7 +27,7 @@ queue<ImuData> imu_que;
 queue<sensor_msgs::ImageConstPtr> image_que;
 queue<sensor_msgs::PointCloud2ConstPtr> velodyne_que;
 ros::Publisher pub_image;
-
+ros::Publisher pub_cloud;
 // double last_imu_t = 0;
 // Estimator vio_estimator;
 
@@ -172,55 +172,45 @@ void ProjectVelodynePointsToImage(
   Tbc.block<3, 3>(0, 0) << 0, 0, 1, -1, 0, 0, 0, -1, 0;
   Tbc(0, 3) = -0.087;
   Tbc(1, 3) = 0.0205;
-  Tbc(2, 3) = 0.2870;
+  Tbc(2, 3) = 0.2870 - 0.0270;
   std::cout << "Tbc \n" << Tbc << std::endl;
 
   Eigen::Matrix4d Tcl = Tbc.inverse() * Tbl;
+  std::cout << "Tcl \n" << Tcl << std::endl;
+
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr color_cloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>());
 
   for (const auto &point : velodyne_points->points) {
     Eigen::Vector4d point_in_lidar(point.x, point.y, point.z, 1.0);
     Eigen::Vector4d point_in_cam = Tcl * point_in_lidar;
-    Eigen::Vector3d point_in_pixel = K * point_in_cam.head(3);
+    Eigen::Vector3d point_in_pixel = K * point_in_cam.head(3) / point_in_cam(2);
+    int u = static_cast<int>(point_in_pixel(0));
+    int v = static_cast<int>(point_in_pixel(1));
+    if (point_in_cam(2) < 0 || u < 0 || u >= projected_image.cols || v < 0 ||
+        v >= projected_image.rows) {
+      continue;
+    }
+    pcl::PointXYZRGB p;
+    p.x = point.x;
+    p.y = point.y;
+    p.z = point.z;
+    p.b = projected_image
+              .data[v * projected_image.step + u * projected_image.channels()];
+    p.g = projected_image.data[v * projected_image.step +
+                               u * projected_image.channels() + 1];
+    p.r = projected_image.data[v * projected_image.step +
+                               u * projected_image.channels() + 2];
+    color_cloud->points.push_back(p);
   }
+  color_cloud->is_dense = false;
+  std::cout << "点云共有" << color_cloud->size() << "个点." << std::endl;
 
-  // cv::Mat projected_image = getImageFromMsg(image_msg);
-  // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
-  // std_msgs::Header header;
-  // header.frame_id = "velodyne";
-  // header.stamp = ros::Time::now();
-  // sensor_msgs::ImagePtr projected_imageMsg =
-  //     cv_bridge::CvImage(header, "mono8", projected_image).toImageMsg();
-  // pub_image.publish(projected_imageMsg);
-  // for (int i = 0; i < 5; i++) {
-  //   cout << "转换图像中: " << i + 1 << endl;
-  //   cv::Mat color = colorImgs[i];
-  //   cv::Mat depth = depthImgs[i];
-  //   Eigen::Isometry3d T = poses[i];
-  //   for (int v = 0; v < color.rows; v++)
-  //     for (int u = 0; u < color.cols; u++) {
-  //       unsigned int d = depth.ptr<unsigned short>(v)[u]; // 深度值
-  //       if (d == 0)
-  //         continue; // 为0表示没有测量到
-  //       Eigen::Vector3d point;
-  //       point[2] = double(d) / depthScale;
-  //       point[0] = (u - cx) * point[2] / fx;
-  //       point[1] = (v - cy) * point[2] / fy;
-  //       Eigen::Vector3d pointWorld = T * point;
-
-  //       PointT p;
-  //       p.x = pointWorld[0];
-  //       p.y = pointWorld[1];
-  //       p.z = pointWorld[2];
-  //       p.b = color.data[v * color.step + u * color.channels()];
-  //       p.g = color.data[v * color.step + u * color.channels() + 1];
-  //       p.r = color.data[v * color.step + u * color.channels() + 2];
-  //       pointCloud->points.push_back(p);
-  //     }
-  // }
-
-  // pointCloud->is_dense = false;
-  // cout << "点云共有" << pointCloud->size() << "个点." << endl;
-  // pcl::io::savePCDFileBinary("map.pcd", *pointCloud);
+  sensor_msgs::PointCloud2 tempCloud;
+  pcl::toROSMsg(*color_cloud, tempCloud);
+  tempCloud.header.stamp = ros::Time::now();
+  tempCloud.header.frame_id = "velodyne";
+  pub_cloud.publish(tempCloud);
 }
 
 void process() {
@@ -242,7 +232,7 @@ void process() {
         m_buf.unlock();
         break;
       }
-      auto pre_image_ptr =image_que.front();
+      auto pre_image_ptr = image_que.front();
       while (image_que.front()->header.stamp.toSec() <
              velodyne_que.front()->header.stamp.toSec()) {
         pre_image_ptr = image_que.front();
@@ -251,26 +241,31 @@ void process() {
         image_que.pop();
       }
       auto next_image_ptr = image_que.front();
-        printf("next_image_ptr time stamp: %f \n",
-               next_image_ptr->header.stamp.toSec());
+      printf("next_image_ptr time stamp: %f \n",
+             next_image_ptr->header.stamp.toSec());
 
-      auto curr_velodyne_points = velodyne_que.front();
+      auto current_velodyne_points = velodyne_que.front();
       printf("curr_velodyne_points time stamp: %f \n",
-             curr_velodyne_points->header.stamp.toSec());
+             current_velodyne_points->header.stamp.toSec());
       velodyne_que.pop();
       m_buf.unlock();
+      auto current_image = next_image_ptr;
+      if (next_image_ptr->header.stamp.toSec() -
+              current_velodyne_points->header.stamp.toSec() >
+          current_velodyne_points->header.stamp.toSec() -
+              pre_image_ptr->header.stamp.toSec()) {
+        current_image = pre_image_ptr;
+      }
+      ProjectVelodynePointsToImage(current_image, current_velodyne_points);
 
-      
-
-  // cv::Mat projected_image = getImageFromMsg(image_msg);
-  // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
-  // std_msgs::Header header;
-  // header.frame_id = "velodyne";
-  // header.stamp = ros::Time::now();
-  // sensor_msgs::ImagePtr projected_imageMsg =
-  //     cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
-  // pub_image.publish(projected_imageMsg);
-
+      // cv::Mat projected_image = getImageFromMsg(image_msg);
+      // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
+      // std_msgs::Header header;
+      // header.frame_id = "velodyne";
+      // header.stamp = ros::Time::now();
+      // sensor_msgs::ImagePtr projected_imageMsg =
+      //     cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
+      // pub_image.publish(projected_imageMsg);
     }
   }
 }
@@ -282,8 +277,9 @@ int main(int argc, char **argv) {
       n.subscribe("/camera/rgb/image_raw", 2000, image_callback);
   ros::Subscriber velodyne_subscriber =
       n.subscribe("/velodyne_points", 2000, velodyne_callback);
-    std::thread measurement_process{process};
+  std::thread measurement_process{process};
   pub_image = n.advertise<sensor_msgs::Image>("/image_track", 1000);
+  pub_cloud = n.advertise<sensor_msgs::PointCloud2>("/color_cloud", 10);
   ros::spin();
   return 0;
 }
