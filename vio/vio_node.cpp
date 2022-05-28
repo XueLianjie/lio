@@ -77,34 +77,13 @@ ros::Publisher pub_image;
 
 cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg) {
   cv_bridge::CvImageConstPtr ptr;
-  if (img_msg->encoding == "8UC1") {
-    sensor_msgs::Image img;
-    img.header = img_msg->header;
-    img.height = img_msg->height;
-    img.width = img_msg->width;
-    img.is_bigendian = img_msg->is_bigendian;
-    img.step = img_msg->step;
-    img.data = img_msg->data;
-    img.encoding = "mono8";
-    ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
-  } else
-    ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
-
+  ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
   cv::Mat img = ptr->image.clone();
   return img;
 }
 
 void image_callback(const sensor_msgs::ImageConstPtr &image_msg) {
-  ROS_INFO("received image_msg time: %f ", image_msg->header.stamp.toSec());
-  //   if (!vio_estimator.GetInitializeFlag()) {
-  //     return; // not initialized do not receive features
-  //   }
-  // if(!init_feature)
-  // {
-  //     // 跳过第一帧图像特征消息，因为第一帧数据没有特征速度信息。
-  //     init_feature = 1;
-  //     return;
-  // }
+  // ROS_INFO("received image_msg time: %f ", image_msg->header.stamp.toSec());
   m_buf.lock();
   image_que.push(image_msg);
   printf("image_que size: %d \n", image_que.size());
@@ -112,28 +91,11 @@ void image_callback(const sensor_msgs::ImageConstPtr &image_msg) {
     image_que.pop();
   }
   m_buf.unlock();
-  cv::Mat projected_image = getImageFromMsg(image_msg);
-  printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
-  std_msgs::Header header;
-  header.frame_id = "velodyne";
-  header.stamp = ros::Time::now();
-  sensor_msgs::ImagePtr projected_imageMsg =
-      cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
-  pub_image.publish(projected_imageMsg);
 }
 
 void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
-  ROS_INFO("received velodyne_msg time: %f ",
-           velodyne_msg->header.stamp.toSec());
-  //   if (!vio_estimator.GetInitializeFlag()) {
-  //     return; // not initialized do not receive features
-  //   }
-  // if(!init_feature)
-  // {
-  //     // 跳过第一帧图像特征消息，因为第一帧数据没有特征速度信息。
-  //     init_feature = 1;
-  //     return;
-  // }
+  // ROS_INFO("received velodyne_msg time: %f ",
+  //          velodyne_msg->header.stamp.toSec());
   m_buf.lock();
   velodyne_que.push(velodyne_msg);
   printf("velodyne_que size: %d \n", velodyne_que.size());
@@ -207,7 +169,7 @@ void ProjectVelodynePointsToImage(
   std::cout << "Tbl \n" << Tbl << std::endl;
 
   Eigen::Matrix4d Tbc = Eigen::Matrix4d::Identity();
-  Tbc.block<3,3>(0, 0) << 0, 0, 1, -1, 0, 0, 0, -1, 0;
+  Tbc.block<3, 3>(0, 0) << 0, 0, 1, -1, 0, 0, 0, -1, 0;
   Tbc(0, 3) = -0.087;
   Tbc(1, 3) = 0.0205;
   Tbc(2, 3) = 0.2870;
@@ -215,10 +177,10 @@ void ProjectVelodynePointsToImage(
 
   Eigen::Matrix4d Tcl = Tbc.inverse() * Tbl;
 
-  for (const auto& point : velodyne_points->points) {
+  for (const auto &point : velodyne_points->points) {
     Eigen::Vector4d point_in_lidar(point.x, point.y, point.z, 1.0);
     Eigen::Vector4d point_in_cam = Tcl * point_in_lidar;
-    Eigen::Vector3d point_in_pixel =  K * point_in_cam.head(3);
+    Eigen::Vector3d point_in_pixel = K * point_in_cam.head(3);
   }
 
   // cv::Mat projected_image = getImageFromMsg(image_msg);
@@ -261,76 +223,66 @@ void ProjectVelodynePointsToImage(
   // pcl::io::savePCDFileBinary("map.pcd", *pointCloud);
 }
 
-// void process() {
-//   while (true) {
-//     while (!image_que.empty() && !velodyne_que.empty()) {
-//       m_buf.lock();
-//       while (!velodyne_que.empty() &&
-//              !(image_que.front()->header.stamp.toSec() <
-//                velodyne_que.front()->header.stamp.toSec())) {
-//         velodyne_que.pop();
-//       }
-//       if (velodyne_que.empty()) {
-//         m_buf.unlock();
-//         break;
-//       }
+void process() {
+  while (true) {
+    while (!image_que.empty() && !velodyne_que.empty()) {
+      m_buf.lock();
+      while (!velodyne_que.empty() &&
+             !(image_que.front()->header.stamp.toSec() <
+               velodyne_que.front()->header.stamp.toSec())) {
+        velodyne_que.pop();
+      }
+      if (velodyne_que.empty()) {
+        m_buf.unlock();
+        break;
+      }
 
-//       if (image_que.back()->header.stamp.toSec() <
-//           velodyne_que.front()->header.stamp.toSec()) {
-//         m_buf.unlock();
-//         break;
-//       }
-//       vector<ImuData, Eigen::aligned_allocator<ImuData>> imu_vec;
-//       while (image_que.front()->header.stamp.toSec() <
-//              velodyne_que.front()->header.stamp.toSec()) {
-//         imu_vec.emplace_back(image_que.front());
-//         printf("imu time stamp: %f \n",
-//                image_que.front()->header.stamp.toSec());
-//         image_que.pop();
-//       }
-//       imu_vec.emplace_back(image_que.front());
+      if (image_que.back()->header.stamp.toSec() <
+          velodyne_que.front()->header.stamp.toSec()) {
+        m_buf.unlock();
+        break;
+      }
+      auto pre_image_ptr =image_que.front();
+      while (image_que.front()->header.stamp.toSec() <
+             velodyne_que.front()->header.stamp.toSec()) {
+        pre_image_ptr = image_que.front();
+        printf("pre_image_ptr time stamp: %f \n",
+               pre_image_ptr->header.stamp.toSec());
+        image_que.pop();
+      }
+      auto next_image_ptr = image_que.front();
+        printf("next_image_ptr time stamp: %f \n",
+               next_image_ptr->header.stamp.toSec());
 
-//       printf("imu time stamp: %f \n", image_que.front()->header.stamp.toSec());
-//       image_que.pop();
+      auto curr_velodyne_points = velodyne_que.front();
+      printf("curr_velodyne_points time stamp: %f \n",
+             curr_velodyne_points->header.stamp.toSec());
+      velodyne_que.pop();
+      m_buf.unlock();
 
-//       sensor_msgs::PointCloudConstPtr feature_ptr = velodyne_que.front();
-//       printf("feature time stamp: %f \n",
-//              velodyne_que.front()->header.stamp.toSec());
-//       velodyne_que.pop();
-//       m_buf.unlock();
+      
 
-//       map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
-//       for (unsigned int i = 0; i < feature_ptr->points.size(); i++) {
-//         int v = feature_ptr->channels[0].values[i] + 0.5;
-//         int feature_id = v / 1;
-//         int camera_id = v % 1;
-//         double x = feature_ptr->points[i].x;
-//         double y = feature_ptr->points[i].y;
-//         double z = feature_ptr->points[i].z;
-//         double p_u = feature_ptr->channels[1].values[i];
-//         double p_v = feature_ptr->channels[2].values[i];
-//         double velocity_x = feature_ptr->channels[3].values[i];
-//         double velocity_y = feature_ptr->channels[4].values[i];
-//         ROS_ASSERT(z == 1);
-//         Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-//         xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-//         image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
-//       }
+  // cv::Mat projected_image = getImageFromMsg(image_msg);
+  // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
+  // std_msgs::Header header;
+  // header.frame_id = "velodyne";
+  // header.stamp = ros::Time::now();
+  // sensor_msgs::ImagePtr projected_imageMsg =
+  //     cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
+  // pub_image.publish(projected_imageMsg);
 
-//       // vio_estimator.processImage(image, feature_ptr->header);
-//     }
-//   }
-// }
+    }
+  }
+}
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "image_projection_node"); // node name
   ros::NodeHandle n("~"); // 指定子命名空间， launch中通过 ns =
   ros::Subscriber image_subscriber =
-      n.subscribe("/camera/rgb/image_raw", 2000,
-                  image_callback);
+      n.subscribe("/camera/rgb/image_raw", 2000, image_callback);
   ros::Subscriber velodyne_subscriber =
       n.subscribe("/velodyne_points", 2000, velodyne_callback);
-  //   std::thread measurement_process{process};
+    std::thread measurement_process{process};
   pub_image = n.advertise<sensor_msgs::Image>("/image_track", 1000);
   ros::spin();
   return 0;
