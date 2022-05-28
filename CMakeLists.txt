@@ -21,8 +21,11 @@ find_package(catkin REQUIRED COMPONENTS
   tf_conversions
   tf
   message_generation
+  pcl_conversions
+  cv_bridge
 )
 find_package(Boost REQUIRED)
+find_package(PCL REQUIRED QUIET)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -142,6 +145,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${OpenCV_INCLUDE_DIRS}
   ${SUITESPARSE_INCLUDE_DIRS}
+  ${PCL_LIBRARY_DIRS}
   include/lio
 )
 
@@ -197,12 +201,12 @@ target_link_libraries(test_marker_node
 )
 
 add_executable(vio_node vio/vio_node.cpp
-                            vio/estimator.cpp
-
                             )
 
 target_link_libraries(vio_node
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${PCL_LIBRARIES}
 )
 
 #############

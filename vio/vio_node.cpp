@@ -1,115 +1,169 @@
-#include <iostream>
-#include <Eigen/Eigen>
-#include <ros/ros.h>
-#include <thread>
-#include <mutex>
-#include <queue>
-#include <vector>
-#include <map>
-#include <condition_variable>
 #include "estimator.h"
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/PointCloud.h>
-#include <tf_conversions/tf_eigen.h>
+#include <Eigen/Eigen>
+#include <condition_variable>
+#include <cv_bridge/cv_bridge.h>
 #include <eigen_conversions/eigen_msg.h>
+#include <iostream>
+#include <map>
+#include <mutex>
+#include <opencv2/opencv.hpp>
+#include <queue>
+#include <ros/ros.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <tf_conversions/tf_eigen.h>
+#include <thread>
+#include <vector>
+
+#include <pcl/common/common.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl_conversions/pcl_conversions.h>
 
 using namespace std;
-
-// #include <sensor_msgs/Image.h>
-
-//std::condition_variable con;
 mutex m_buf;
-
 queue<ImuData> imu_que;
-
-queue<sensor_msgs::PointCloudConstPtr> feature_que;
+queue<sensor_msgs::ImageConstPtr> image_que;
+queue<sensor_msgs::PointCloud2ConstPtr> velodyne_que;
+ros::Publisher pub_image;
 
 // double last_imu_t = 0;
-Estimator vio_estimator;
+// Estimator vio_estimator;
 
-void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
-{
-    ROS_INFO("received imu_msg time: %f ", imu_msg->header.stamp.toSec());
-    // if (imu_msg->header.stamp.toSec() <= last_imu_t)
-    // {
-    //     ROS_WARN("imu message in disorder!");
-    //     return;
-    // }
-    // last_imu_t = imu_msg->header.stamp.toSec();
-    m_buf.lock();
-    Eigen::Vector3d acc, gyro;
-    tf::vectorMsgToEigen(imu_msg->linear_acceleration, acc);
-    tf::vectorMsgToEigen(imu_msg->angular_velocity, gyro);
-    imu_que.push(ImuData(imu_msg->header.stamp.toSec(), acc, gyro));
-    printf("imu_que size: %d \n", imu_que.size());
-    if (imu_que.size() > 200 && !vio_estimator.GetInitializeFlag())
-    {
-        vector<ImuData> imu_vec;
-        while (!imu_que.empty())
-        {
-            imu_vec.emplace_back(imu_que.front());
-            imu_que.pop();
-        }
-        m_buf.unlock();
-        vio_estimator.StaticInitialize(imu_vec);
-        return;
-    }
-
-    m_buf.unlock();
-
-    // con.notify_one();
-
-    // last_imu_t = imu_msg->header.stamp.toSec();
-    // {
-    //     std::lock_guard<std::mutex> lg(m_state);
-    //     predict(imu_msg);
-    //     std_msgs::Header header = imu_msg->header;
-    //     header.frame_id = "world";
-    //     if(estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
-    //         pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header);
-
-    // }
-}
-
-void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
-{
-    ROS_INFO("received feature_msg time: %f ", feature_msg->header.stamp.toSec());
-    if (!vio_estimator.GetInitializeFlag())
-    {
-        return; // not initialized do not receive features
-    }
-    // if(!init_feature)
-    // {
-    //     // 跳过第一帧图像特征消息，因为第一帧数据没有特征速度信息。
-    //     init_feature = 1;
-    //     return;
-    // }
-    m_buf.lock();
-    feature_que.push(feature_msg);
-    printf("feature_que size: %d \n", feature_que.size());
-
-    m_buf.unlock();
-    // con.notify_one();
-}
-
-// std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>>
-// getMeasurements()
+// void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 // {
-//     std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>> measurements;
+//     ROS_INFO("received imu_msg time: %f ", imu_msg->header.stamp.toSec());
+//     // if (imu_msg->header.stamp.toSec() <= last_imu_t)
+//     // {
+//     //     ROS_WARN("imu message in disorder!");
+//     //     return;
+//     // }
+//     // last_imu_t = imu_msg->header.stamp.toSec();
+//     m_buf.lock();
+//     Eigen::Vector3d acc, gyro;
+//     tf::vectorMsgToEigen(imu_msg->linear_acceleration, acc);
+//     tf::vectorMsgToEigen(imu_msg->angular_velocity, gyro);
+//     imu_que.push(ImuData(imu_msg->header.stamp.toSec(), acc, gyro));
+//     printf("imu_que size: %d \n", imu_que.size());
+//     if (imu_que.size() > 200 && !vio_estimator.GetInitializeFlag())
+//     {
+//         vector<ImuData> imu_vec;
+//         while (!imu_que.empty())
+//         {
+//             imu_vec.emplace_back(imu_que.front());
+//             imu_que.pop();
+//         }
+//         m_buf.unlock();
+//         vio_estimator.StaticInitialize(imu_vec);
+//         return;
+//     }
+
+//     m_buf.unlock();
+
+//     // con.notify_one();
+
+//     // last_imu_t = imu_msg->header.stamp.toSec();
+//     // {
+//     //     std::lock_guard<std::mutex> lg(m_state);
+//     //     predict(imu_msg);
+//     //     std_msgs::Header header = imu_msg->header;
+//     //     header.frame_id = "world";
+//     //     if(estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
+//     //         pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header);
+
+//     // }
+// }
+
+cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg) {
+  cv_bridge::CvImageConstPtr ptr;
+  if (img_msg->encoding == "8UC1") {
+    sensor_msgs::Image img;
+    img.header = img_msg->header;
+    img.height = img_msg->height;
+    img.width = img_msg->width;
+    img.is_bigendian = img_msg->is_bigendian;
+    img.step = img_msg->step;
+    img.data = img_msg->data;
+    img.encoding = "mono8";
+    ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+  } else
+    ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
+
+  cv::Mat img = ptr->image.clone();
+  return img;
+}
+
+void image_callback(const sensor_msgs::ImageConstPtr &image_msg) {
+  ROS_INFO("received image_msg time: %f ", image_msg->header.stamp.toSec());
+  //   if (!vio_estimator.GetInitializeFlag()) {
+  //     return; // not initialized do not receive features
+  //   }
+  // if(!init_feature)
+  // {
+  //     // 跳过第一帧图像特征消息，因为第一帧数据没有特征速度信息。
+  //     init_feature = 1;
+  //     return;
+  // }
+  m_buf.lock();
+  image_que.push(image_msg);
+  printf("image_que size: %d \n", image_que.size());
+  if (image_que.size() > 1000) {
+    image_que.pop();
+  }
+  m_buf.unlock();
+  cv::Mat projected_image = getImageFromMsg(image_msg);
+  printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
+  std_msgs::Header header;
+  header.frame_id = "velodyne";
+  header.stamp = ros::Time::now();
+  sensor_msgs::ImagePtr projected_imageMsg =
+      cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
+  pub_image.publish(projected_imageMsg);
+}
+
+void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
+  ROS_INFO("received velodyne_msg time: %f ",
+           velodyne_msg->header.stamp.toSec());
+  //   if (!vio_estimator.GetInitializeFlag()) {
+  //     return; // not initialized do not receive features
+  //   }
+  // if(!init_feature)
+  // {
+  //     // 跳过第一帧图像特征消息，因为第一帧数据没有特征速度信息。
+  //     init_feature = 1;
+  //     return;
+  // }
+  m_buf.lock();
+  velodyne_que.push(velodyne_msg);
+  printf("velodyne_que size: %d \n", velodyne_que.size());
+  if (velodyne_que.size() > 1000) {
+    velodyne_que.pop();
+  }
+  m_buf.unlock();
+}
+
+// std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>,
+// sensor_msgs::PointCloudConstPtr>> getMeasurements()
+// {
+//     std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>,
+//     sensor_msgs::PointCloudConstPtr>> measurements;
 
 //     while (true)
 //     {
 //         if (imu_que.empty() || feature_que.empty())
 //             return measurements;
 
-//         if (!(imu_que.back()->header.stamp.toSec() > feature_que.front()->header.stamp.toSec() + estimator.td))
+//         if (!(imu_que.back()->header.stamp.toSec() >
+//         feature_que.front()->header.stamp.toSec() + estimator.td))
 //         {
 //             //ROS_WARN("wait for imu, only should happen at the beginning");
 //             sum_of_wait++;
 //             return measurements;
 //         }
 
-//         if (!(imu_que.front()->header.stamp.toSec() < feature_que.front()->header.stamp.toSec() + estimator.td))
+//         if (!(imu_que.front()->header.stamp.toSec() <
+//         feature_que.front()->header.stamp.toSec() + estimator.td))
 //         {
 //             ROS_WARN("throw img, only should happen at the beginning");
 //             feature_que.pop();
@@ -119,7 +173,8 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 //         feature_que.pop();
 
 //         std::vector<sensor_msgs::ImuConstPtr> IMUs;
-//         while (imu_que.front()->header.stamp.toSec() < feature_ptr->header.stamp.toSec() + estimator.td)
+//         while (imu_que.front()->header.stamp.toSec() <
+//         feature_ptr->header.stamp.toSec() + estimator.td)
 //         {
 //             IMUs.emplace_back(imu_que.front());
 //             imu_que.pop();
@@ -132,84 +187,151 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
 //     return measurements;
 // }
 
-void process()
-{
-    while (true)
-    {
-        while (!imu_que.empty() && !feature_que.empty())
-        {
-            m_buf.lock();
-            // i i i i  | image 为一帧
-            while (!feature_que.empty() && !(imu_que.front().time_stamp_ < feature_que.front()->header.stamp.toSec()))
-            {
-                feature_que.pop();
-            }
-            if (feature_que.empty())
-            {
-                m_buf.unlock();
-                break;
-            }
+void ProjectVelodynePointsToImage(
+    const sensor_msgs::ImageConstPtr &image_msg,
+    const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr velodyne_points(
+      new pcl::PointCloud<pcl::PointXYZRGB>());
+  pcl::fromROSMsg(*velodyne_msg, *velodyne_points);
+  cv::Mat projected_image = getImageFromMsg(image_msg);
 
-            if (imu_que.back().time_stamp_ < feature_que.front()->header.stamp.toSec())
-            {
-                m_buf.unlock();
-                break;
-            }
-            vector<ImuData, Eigen::aligned_allocator<ImuData>> imu_vec;
-            while (imu_que.front().time_stamp_ < feature_que.front()->header.stamp.toSec())
-            {
-                imu_vec.emplace_back(imu_que.front());
-                printf("imu time stamp: %f \n", imu_que.front().time_stamp_);
-                imu_que.pop();
-            }
-            imu_vec.emplace_back(imu_que.front());
+  Eigen::Matrix3d K = Eigen::Matrix3d::Identity();
+  K(0, 0) = 554.2547;
+  K(1, 1) = 554.2547;
+  K(0, 2) = 320.5;
+  K(1, 2) = 240.5;
+  std::cout << "K \n" << K << std::endl;
 
-            printf("imu time stamp: %f \n", imu_que.front().time_stamp_);
-            imu_que.pop();
+  Eigen::Matrix4d Tbl = Eigen::Matrix4d::Identity();
+  Tbl(2, 3) = 0.4;
+  std::cout << "Tbl \n" << Tbl << std::endl;
 
-            sensor_msgs::PointCloudConstPtr feature_ptr = feature_que.front();
-            printf("feature time stamp: %f \n", feature_que.front()->header.stamp.toSec());
-            feature_que.pop();
-            m_buf.unlock();
+  Eigen::Matrix4d Tbc = Eigen::Matrix4d::Identity();
+  Tbc.block<3,3>(0, 0) << 0, 0, 1, -1, 0, 0, 0, -1, 0;
+  Tbc(0, 3) = -0.087;
+  Tbc(1, 3) = 0.0205;
+  Tbc(2, 3) = 0.2870;
+  std::cout << "Tbc \n" << Tbc << std::endl;
 
-            map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
-            for (unsigned int i = 0; i < feature_ptr->points.size(); i++)
-            {
-                int v = feature_ptr->channels[0].values[i] + 0.5;
-                int feature_id = v / 1;
-                int camera_id = v % 1;
-                double x = feature_ptr->points[i].x;
-                double y = feature_ptr->points[i].y;
-                double z = feature_ptr->points[i].z;
-                double p_u = feature_ptr->channels[1].values[i];
-                double p_v = feature_ptr->channels[2].values[i];
-                double velocity_x = feature_ptr->channels[3].values[i];
-                double velocity_y = feature_ptr->channels[4].values[i];
-                ROS_ASSERT(z == 1);
-                Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-                xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-                image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
-            }
+  Eigen::Matrix4d Tcl = Tbc.inverse() * Tbl;
 
-            //vio_estimator.processImage(image, feature_ptr->header);
-        }
-    }
+  for (const auto& point : velodyne_points->points) {
+    Eigen::Vector4d point_in_lidar(point.x, point.y, point.z, 1.0);
+    Eigen::Vector4d point_in_cam = Tcl * point_in_lidar;
+    Eigen::Vector3d point_in_pixel =  K * point_in_cam.head(3);
+  }
+
+  // cv::Mat projected_image = getImageFromMsg(image_msg);
+  // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
+  // std_msgs::Header header;
+  // header.frame_id = "velodyne";
+  // header.stamp = ros::Time::now();
+  // sensor_msgs::ImagePtr projected_imageMsg =
+  //     cv_bridge::CvImage(header, "mono8", projected_image).toImageMsg();
+  // pub_image.publish(projected_imageMsg);
+  // for (int i = 0; i < 5; i++) {
+  //   cout << "转换图像中: " << i + 1 << endl;
+  //   cv::Mat color = colorImgs[i];
+  //   cv::Mat depth = depthImgs[i];
+  //   Eigen::Isometry3d T = poses[i];
+  //   for (int v = 0; v < color.rows; v++)
+  //     for (int u = 0; u < color.cols; u++) {
+  //       unsigned int d = depth.ptr<unsigned short>(v)[u]; // 深度值
+  //       if (d == 0)
+  //         continue; // 为0表示没有测量到
+  //       Eigen::Vector3d point;
+  //       point[2] = double(d) / depthScale;
+  //       point[0] = (u - cx) * point[2] / fx;
+  //       point[1] = (v - cy) * point[2] / fy;
+  //       Eigen::Vector3d pointWorld = T * point;
+
+  //       PointT p;
+  //       p.x = pointWorld[0];
+  //       p.y = pointWorld[1];
+  //       p.z = pointWorld[2];
+  //       p.b = color.data[v * color.step + u * color.channels()];
+  //       p.g = color.data[v * color.step + u * color.channels() + 1];
+  //       p.r = color.data[v * color.step + u * color.channels() + 2];
+  //       pointCloud->points.push_back(p);
+  //     }
+  // }
+
+  // pointCloud->is_dense = false;
+  // cout << "点云共有" << pointCloud->size() << "个点." << endl;
+  // pcl::io::savePCDFileBinary("map.pcd", *pointCloud);
 }
 
-int main(int argc, char **argv)
-{
+// void process() {
+//   while (true) {
+//     while (!image_que.empty() && !velodyne_que.empty()) {
+//       m_buf.lock();
+//       while (!velodyne_que.empty() &&
+//              !(image_que.front()->header.stamp.toSec() <
+//                velodyne_que.front()->header.stamp.toSec())) {
+//         velodyne_que.pop();
+//       }
+//       if (velodyne_que.empty()) {
+//         m_buf.unlock();
+//         break;
+//       }
 
-    ros::init(argc, argv, "vio_optimization_based_node"); // node name
+//       if (image_que.back()->header.stamp.toSec() <
+//           velodyne_que.front()->header.stamp.toSec()) {
+//         m_buf.unlock();
+//         break;
+//       }
+//       vector<ImuData, Eigen::aligned_allocator<ImuData>> imu_vec;
+//       while (image_que.front()->header.stamp.toSec() <
+//              velodyne_que.front()->header.stamp.toSec()) {
+//         imu_vec.emplace_back(image_que.front());
+//         printf("imu time stamp: %f \n",
+//                image_que.front()->header.stamp.toSec());
+//         image_que.pop();
+//       }
+//       imu_vec.emplace_back(image_que.front());
 
-    ros::NodeHandle n("~"); // 指定子命名空间， launch中通过 ns = "node_namespace"指定全局命名空间
+//       printf("imu time stamp: %f \n", image_que.front()->header.stamp.toSec());
+//       image_que.pop();
 
-    //ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
+//       sensor_msgs::PointCloudConstPtr feature_ptr = velodyne_que.front();
+//       printf("feature time stamp: %f \n",
+//              velodyne_que.front()->header.stamp.toSec());
+//       velodyne_que.pop();
+//       m_buf.unlock();
 
-    //readParameters(n);
+//       map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> image;
+//       for (unsigned int i = 0; i < feature_ptr->points.size(); i++) {
+//         int v = feature_ptr->channels[0].values[i] + 0.5;
+//         int feature_id = v / 1;
+//         int camera_id = v % 1;
+//         double x = feature_ptr->points[i].x;
+//         double y = feature_ptr->points[i].y;
+//         double z = feature_ptr->points[i].z;
+//         double p_u = feature_ptr->channels[1].values[i];
+//         double p_v = feature_ptr->channels[2].values[i];
+//         double velocity_x = feature_ptr->channels[3].values[i];
+//         double velocity_y = feature_ptr->channels[4].values[i];
+//         ROS_ASSERT(z == 1);
+//         Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
+//         xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+//         image[feature_id].emplace_back(camera_id, xyz_uv_velocity);
+//       }
 
-    ros::Subscriber sub_imu = n.subscribe("/imu_sim", 2000, imu_callback); // , ros::TransportHints().tcpNoDelay()); // TODO: 探究下这里的tcpNoDelay是什么意思
-    ros::Subscriber sub_image = n.subscribe("/imu_pub_node/img_feature", 2000, feature_callback);
-    std::thread measurement_process{process};
-    ros::spin();
-    return 0;
+//       // vio_estimator.processImage(image, feature_ptr->header);
+//     }
+//   }
+// }
+
+int main(int argc, char **argv) {
+  ros::init(argc, argv, "image_projection_node"); // node name
+  ros::NodeHandle n("~"); // 指定子命名空间， launch中通过 ns =
+  ros::Subscriber image_subscriber =
+      n.subscribe("/camera/rgb/image_raw", 2000,
+                  image_callback);
+  ros::Subscriber velodyne_subscriber =
+      n.subscribe("/velodyne_points", 2000, velodyne_callback);
+  //   std::thread measurement_process{process};
+  pub_image = n.advertise<sensor_msgs::Image>("/image_track", 1000);
+  ros::spin();
+  return 0;
 }
