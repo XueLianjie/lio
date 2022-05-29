@@ -165,7 +165,7 @@ catkin_package(
 ## Build ##
 ###########
 
-
+include_directories(${catkin_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIRS})
 include_directories(${OpenCV_INCLUDE_DIRS} ${OPENGL_INCLUDE_DIRS}  ${GLUT_INCLUDE_DIRS}  )
 include_directories(${Pangolin_INCLUDE_DIRS})
@@ -200,16 +200,19 @@ file(GLOB SOURCE_FILES
 )
 
 add_executable(FlashFusion ${SOURCE_FILES})
-target_link_libraries(FlashFusion ${OpenCV_LIBS} 
-                      ${Eigen_LIBRARIES}
-                      ${Pangolin_LIBRARIES}
-                      ${CHISEL_LIBRARY}
-                      ${OPENNI2_LIBRARY}
+target_link_libraries(FlashFusion 
+          ${catkin_LIBRARIES}
+          ${OpenCV_LIBS} 
+          ${Eigen_LIBRARIES}
+          ${Pangolin_LIBRARIES}
+          ${CHISEL_LIBRARY}
+          ${OPENNI2_LIBRARY}
 		      ${OPENGL_LIBRARIES} 
 		      ${GLUT_LIBRARY}
-                      ${REALSENSE2_FOUND}
+          ${REALSENSE2_FOUND}
 		      ${pthread} 
-		      ${Boost_LIBRARIES})
+		      ${Boost_LIBRARIES}
+)
 
 
 
