@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.2)
 project(lio)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
@@ -7,8 +7,17 @@ add_compile_options(-std=c++14)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
+# set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/Flashfusion")
+set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 
+
+set(OpenCV_DIR "./Flashfusion/third_party_library/opencv-3.3.0/build")
+set(Pangolin_DIR "./Flashfusion/third_party_library/Pangolin-master/build")
+set(Sophus_DIR "./Flashfusion/third_party_library/Sophus/build")
+set(SOPHUS_INCLUDE_DIR "./Flashfusion/third_party_library/Sophus")
+
+set(GCFUSION_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Flashfusion/Shaders" CACHE PATH "Where the shaders live")
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -24,13 +33,32 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_conversions
   cv_bridge
 )
-find_package(Boost REQUIRED)
+# find_package(Boost REQUIRED)
 find_package(PCL REQUIRED QUIET)
 
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(SuiteSparse REQUIRED)
+# find_package(SuiteSparse REQUIRED)
 
+find_package(OpenGL)
+find_package(GLUT)
+find_package(Chisel REQUIRED)
+find_package(OpenNI2 REQUIRED)
+find_package(Sophus REQUIRED)
+find_package(Pangolin 0.1 REQUIRED)
+find_package(PkgConfig)
+pkg_check_modules( EIGEN3 REQUIRED eigen3 )
+find_package(Boost COMPONENTS system thread  filesystem REQUIRED)
+set(realsense2_DIR "./Flashfusion/third_party_library/librealsense-master/build")
+set(REALSENSE2_INCLUDE_DIRS "./Flashfusion/third_party_library/librealsense-master/include")
+find_library(REALSENSE2_FOUND realsense2 HINTS ${realsense2_DIR} REQUIRED)
+
+if(NOT REALSENSE2_FOUND)
+    message(WARN "Failed to find_library(realsense2)")
+else()
+    message( STATUS "Realsense lib found: " ${REALSENSE2_FOUND})
+    message( STATUS "Realsense incl dir: " ${REALSENSE2_INCLUDE_DIRS})
+endif()
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -137,17 +165,65 @@ catkin_package(
 ## Build ##
 ###########
 
+
+include_directories(${EIGEN3_INCLUDE_DIRS})
+include_directories(${OpenCV_INCLUDE_DIRS} ${OPENGL_INCLUDE_DIRS}  ${GLUT_INCLUDE_DIRS}  )
+include_directories(${Pangolin_INCLUDE_DIRS})
+include_directories( ${SOPHUS_INCLUDE_DIR} )
+include_directories( ${Boost_INCLUDE_DIR} )
+include_directories(${CHISEL_INCLUDE_DIR})
+include_directories(${OPENNI2_INCLUDE_DIR})
+include_directories(${REALSENSE2_INCLUDE_DIRS})
+
+add_definitions(-DWITH_REALSENSE)
+
+
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -w")
+set(CMAKE_CXX_FLAGS ${ADDITIONAL_CMAKE_CXX_FLAGS} "-O3 -msse2 -msse3  -msse4.1 -Wall -std=c++14 -DSHADER_DIR=${GCFUSION_SHADER_DIR}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2 -ftree-vectorize -lboost_system -lpthread -lboost_thread -lboost_filesystem -mavx2")
+
+file(GLOB SOURCE_FILES
+"./Flashfusion/*.cpp"
+"./Flashfusion/*.h"
+"./Flashfusion/Tools/*.h"
+"./Flashfusion/Tools/*.cpp"
+"./Flashfusion/GCSLAM/*.cpp"
+"./Flashfusion/GCSLAM/*.h"
+"./Flashfusion/GCSLAM/MILD/*.cpp"
+"./Flashfusion/GCSLAM/MILD/*.h"
+"./Flashfusion/GCSLAM/ORBSLAM/*.cpp"
+"./Flashfusion/GCSLAM/ORBSLAM/*.h"
+"./Flashfusion/GCFusion/*.cpp"
+"./Flashfusion/GCFusion/*.h"
+"./Flashfusion/Shaders/*.cpp"
+"./Flashfusion/Shaders/*.h"
+)
+
+add_executable(FlashFusion ${SOURCE_FILES})
+target_link_libraries(FlashFusion ${OpenCV_LIBS} 
+                      ${Eigen_LIBRARIES}
+                      ${Pangolin_LIBRARIES}
+                      ${CHISEL_LIBRARY}
+                      ${OPENNI2_LIBRARY}
+		      ${OPENGL_LIBRARIES} 
+		      ${GLUT_LIBRARY}
+                      ${REALSENSE2_FOUND}
+		      ${pthread} 
+		      ${Boost_LIBRARIES})
+
+
+
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIR}
-  ${OpenCV_INCLUDE_DIRS}
-  ${SUITESPARSE_INCLUDE_DIRS}
-  ${PCL_LIBRARY_DIRS}
-  include/lio
-)
+# include_directories(
+#   include
+#   ${catkin_INCLUDE_DIRS}
+#   ${EIGEN3_INCLUDE_DIR}
+#   ${OpenCV_INCLUDE_DIRS}
+#   ${SUITESPARSE_INCLUDE_DIRS}
+#   ${PCL_LIBRARY_DIRS}
+#   include/lio
+# )
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -163,14 +239,14 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 
-add_executable(vio_node vio/vio_node.cpp
-                            )
+# add_executable(vio_node vio/vio_node.cpp
+#                             )
 
-target_link_libraries(vio_node
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBS}
-  ${PCL_LIBRARIES}
-)
+# target_link_libraries(vio_node
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBS}
+#   ${PCL_LIBRARIES}
+# )
 
 #############
 ## Install ##
