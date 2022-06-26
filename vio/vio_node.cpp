@@ -28,52 +28,6 @@ queue<sensor_msgs::ImageConstPtr> image_que;
 queue<sensor_msgs::PointCloud2ConstPtr> velodyne_que;
 ros::Publisher pub_image;
 ros::Publisher pub_cloud;
-// double last_imu_t = 0;
-// Estimator vio_estimator;
-
-// void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
-// {
-//     ROS_INFO("received imu_msg time: %f ", imu_msg->header.stamp.toSec());
-//     // if (imu_msg->header.stamp.toSec() <= last_imu_t)
-//     // {
-//     //     ROS_WARN("imu message in disorder!");
-//     //     return;
-//     // }
-//     // last_imu_t = imu_msg->header.stamp.toSec();
-//     m_buf.lock();
-//     Eigen::Vector3d acc, gyro;
-//     tf::vectorMsgToEigen(imu_msg->linear_acceleration, acc);
-//     tf::vectorMsgToEigen(imu_msg->angular_velocity, gyro);
-//     imu_que.push(ImuData(imu_msg->header.stamp.toSec(), acc, gyro));
-//     printf("imu_que size: %d \n", imu_que.size());
-//     if (imu_que.size() > 200 && !vio_estimator.GetInitializeFlag())
-//     {
-//         vector<ImuData> imu_vec;
-//         while (!imu_que.empty())
-//         {
-//             imu_vec.emplace_back(imu_que.front());
-//             imu_que.pop();
-//         }
-//         m_buf.unlock();
-//         vio_estimator.StaticInitialize(imu_vec);
-//         return;
-//     }
-
-//     m_buf.unlock();
-
-//     // con.notify_one();
-
-//     // last_imu_t = imu_msg->header.stamp.toSec();
-//     // {
-//     //     std::lock_guard<std::mutex> lg(m_state);
-//     //     predict(imu_msg);
-//     //     std_msgs::Header header = imu_msg->header;
-//     //     header.frame_id = "world";
-//     //     if(estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
-//     //         pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header);
-
-//     // }
-// }
 
 cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg) {
   cv_bridge::CvImageConstPtr ptr;
@@ -104,50 +58,6 @@ void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
   }
   m_buf.unlock();
 }
-
-// std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>,
-// sensor_msgs::PointCloudConstPtr>> getMeasurements()
-// {
-//     std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>,
-//     sensor_msgs::PointCloudConstPtr>> measurements;
-
-//     while (true)
-//     {
-//         if (imu_que.empty() || feature_que.empty())
-//             return measurements;
-
-//         if (!(imu_que.back()->header.stamp.toSec() >
-//         feature_que.front()->header.stamp.toSec() + estimator.td))
-//         {
-//             //ROS_WARN("wait for imu, only should happen at the beginning");
-//             sum_of_wait++;
-//             return measurements;
-//         }
-
-//         if (!(imu_que.front()->header.stamp.toSec() <
-//         feature_que.front()->header.stamp.toSec() + estimator.td))
-//         {
-//             ROS_WARN("throw img, only should happen at the beginning");
-//             feature_que.pop();
-//             continue;
-//         }
-//         sensor_msgs::PointCloudConstPtr feature_ptr = feature_que.front();
-//         feature_que.pop();
-
-//         std::vector<sensor_msgs::ImuConstPtr> IMUs;
-//         while (imu_que.front()->header.stamp.toSec() <
-//         feature_ptr->header.stamp.toSec() + estimator.td)
-//         {
-//             IMUs.emplace_back(imu_que.front());
-//             imu_que.pop();
-//         }
-//         IMUs.emplace_back(imu_que.front());
-//         if (IMUs.empty())
-//             ROS_WARN("no imu between two image");
-//         measurements.emplace_back(IMUs, feature_ptr);
-//     }
-//     return measurements;
-// }
 
 void ProjectVelodynePointsToImage(
     const sensor_msgs::ImageConstPtr &image_msg,
@@ -204,8 +114,6 @@ void ProjectVelodynePointsToImage(
     color_cloud->points.push_back(p);
   }
   color_cloud->is_dense = false;
-  std::cout << "点云共有" << color_cloud->size() << "个点." << std::endl;
-
   sensor_msgs::PointCloud2 tempCloud;
   pcl::toROSMsg(*color_cloud, tempCloud);
   tempCloud.header.stamp = ros::Time::now();
@@ -258,16 +166,10 @@ void process() {
       }
       ProjectVelodynePointsToImage(current_image, current_velodyne_points);
 
-      // cv::Mat projected_image = getImageFromMsg(image_msg);
-      // printf("cols %d rows %d ", projected_image.cols, projected_image.rows);
-      // std_msgs::Header header;
-      // header.frame_id = "velodyne";
-      // header.stamp = ros::Time::now();
-      // sensor_msgs::ImagePtr projected_imageMsg =
-      //     cv_bridge::CvImage(header, "bgr8", projected_image).toImageMsg();
-      // pub_image.publish(projected_imageMsg);
     }
+    ros::Duration(0.01).sleep();
   }
+
 }
 
 int main(int argc, char **argv) {
