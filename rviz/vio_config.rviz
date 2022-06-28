@@ -103,7 +103,7 @@ Visualization Manager:
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.029999999329447746
-      Style: Flat Squares
+      Style: Points
       Topic: /color_cloud
       Unreliable: false
       Use Fixed Frame: true
@@ -111,7 +111,7 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /camera/rgb/image_raw
+      Image Topic: /d435/camera/color/image_raw
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -179,7 +179,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 9.874955177307129
+      Distance: 10.43652629852295
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -194,10 +194,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.22979728877544403
+      Pitch: 0.06479726731777191
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.7772178649902344
+      Yaw: 3.3472228050231934
     Saved: ~
 Window Geometry:
   Displays:

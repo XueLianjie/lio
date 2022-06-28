@@ -172,6 +172,17 @@ target_link_libraries(vio_node
   ${PCL_LIBRARIES}
 )
 
+
+add_executable(to_image vio/to_image.cpp
+                            )
+
+target_link_libraries(to_image
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBS}
+  ${PCL_LIBRARIES}
+)
+
+
 #############
 ## Install ##
 #############

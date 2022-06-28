@@ -68,24 +68,24 @@ void ProjectVelodynePointsToImage(
   cv::Mat projected_image = getImageFromMsg(image_msg);
 
   Eigen::Matrix3d K = Eigen::Matrix3d::Identity();
-  K(0, 0) = 554.2547;
-  K(1, 1) = 554.2547;
-  K(0, 2) = 320.5;
-  K(1, 2) = 240.5;
+  K(0, 0) = 554.3836;
+  K(1, 1) = 554.3826;
+  K(0, 2) = 320.;
+  K(1, 2) = 240.;
   std::cout << "K \n" << K << std::endl;
 
-  Eigen::Matrix4d Tbl = Eigen::Matrix4d::Identity();
-  Tbl(2, 3) = 0.4;
-  std::cout << "Tbl \n" << Tbl << std::endl;
+  // Eigen::Matrix4d Tbl = Eigen::Matrix4d::Identity();
+  // Tbl(2, 3) = 0.4;
+  // std::cout << "Tbl \n" << Tbl << std::endl;
 
   Eigen::Matrix4d Tbc = Eigen::Matrix4d::Identity();
   Tbc.block<3, 3>(0, 0) << 0, 0, 1, -1, 0, 0, 0, -1, 0;
-  Tbc(0, 3) = -0.087;
-  Tbc(1, 3) = 0.0205;
-  Tbc(2, 3) = 0.2870 - 0.0270;
+  Tbc(0, 3) = 1.121;
+  Tbc(1, 3) = 0.167;
+  Tbc(2, 3) = -0.018;
   std::cout << "Tbc \n" << Tbc << std::endl;
 
-  Eigen::Matrix4d Tcl = Tbc.inverse() * Tbl;
+  Eigen::Matrix4d Tcl = Tbc.inverse();
   std::cout << "Tcl \n" << Tcl << std::endl;
 
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr color_cloud(
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "image_projection_node"); // node name
   ros::NodeHandle n("~"); // 指定子命名空间， launch中通过 ns =
   ros::Subscriber image_subscriber =
-      n.subscribe("/camera/rgb/image_raw", 2000, image_callback);
+      n.subscribe("/d435/camera/color/image_raw", 2000, image_callback);
   ros::Subscriber velodyne_subscriber =
       n.subscribe("/velodyne_points", 2000, velodyne_callback);
   std::thread measurement_process{process};
