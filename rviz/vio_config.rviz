@@ -111,7 +111,7 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /camera/rgb/image_raw
+      Image Topic: /d435/camera/color/image_raw
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -179,7 +179,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 9.874955177307129
+      Distance: 15.538434028625488
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -194,10 +194,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.22979728877544403
+      Pitch: 0.19979727268218994
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.7772178649902344
+      Yaw: 2.992220163345337
     Saved: ~
 Window Geometry:
   Displays:
