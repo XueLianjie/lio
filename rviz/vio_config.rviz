@@ -90,13 +90,11 @@ Visualization Manager:
       Class: rviz/PointCloud2
       Color: 255; 255; 255
       Color Transformer: RGB8
-      Decay Time: 0
+      Decay Time: 500
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 999999
       Min Color: 0; 0; 0
-      Min Intensity: -0.005282368510961533
       Name: PointCloud2
       Position Transformer: XYZ
       Queue Size: 10
@@ -136,9 +134,7 @@ Visualization Manager:
       Enabled: false
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 999999
       Min Color: 0; 0; 0
-      Min Intensity: -0.005282368510961533
       Name: PointCloud2
       Position Transformer: XYZ
       Queue Size: 10
@@ -153,7 +149,7 @@ Visualization Manager:
       Value: false
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 255; 255; 255
     Default Light: true
     Fixed Frame: velodyne
     Frame Rate: 30
@@ -179,25 +175,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 10.43652629852295
+      Distance: 67.86703491210938
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 2.0324833393096924
-        Y: 1.1172277927398682
-        Z: 1.476076364517212
+        X: 32.12681579589844
+        Y: 6.579280376434326
+        Z: -9.692641258239746
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.06479726731777191
+      Pitch: 0.3897968530654907
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.3472228050231934
+      Yaw: 3.2222256660461426
     Saved: ~
 Window Geometry:
   Displays:

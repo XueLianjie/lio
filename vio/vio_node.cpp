@@ -12,6 +12,7 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <nav_msgs/Odometry.h>
 #include <tf_conversions/tf_eigen.h>
 #include <thread>
 #include <vector>
@@ -20,12 +21,15 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl_ros/transforms.h>
+#include <ctime>
 
 using namespace std;
 mutex m_buf;
 queue<ImuData> imu_que;
 queue<sensor_msgs::ImageConstPtr> image_que;
 queue<sensor_msgs::PointCloud2ConstPtr> velodyne_que;
+map<double, nav_msgs::Odometry> odometry_que;
 ros::Publisher pub_image;
 ros::Publisher pub_cloud;
 
@@ -57,6 +61,20 @@ void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
     velodyne_que.pop();
   }
   m_buf.unlock();
+}
+
+void odometry_callback(const nav_msgs::Odometry::ConstPtr &odometry_msg) {
+  m_buf.lock();
+  ROS_INFO("received odometry_msg time: %f ",
+           odometry_msg->header.stamp.toSec());
+
+  odometry_que.insert(std::make_pair(odometry_msg->header.stamp.toSec() ,*odometry_msg));
+  printf("odometry_que size: %d \n", odometry_que.size());
+  // if (odometry_que.size() > 5000) {
+  //   odometry_que.pop();
+  // }
+  m_buf.unlock();
+
 }
 
 void ProjectVelodynePointsToImage(
@@ -114,11 +132,34 @@ void ProjectVelodynePointsToImage(
     color_cloud->points.push_back(p);
   }
   color_cloud->is_dense = false;
-  sensor_msgs::PointCloud2 tempCloud;
-  pcl::toROSMsg(*color_cloud, tempCloud);
-  tempCloud.header.stamp = ros::Time::now();
-  tempCloud.header.frame_id = "velodyne";
-  pub_cloud.publish(tempCloud);
+
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+  Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
+  m_buf.lock();
+  while (odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) == odometry_que.end()) {
+    m_buf.unlock();
+    usleep(300);
+  }
+
+  if (!odometry_que.empty() && odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) != odometry_que.end()) {
+    nav_msgs::Odometry odom = (odometry_que.upper_bound(velodyne_msg->header.stamp.toSec())->second);
+    Eigen::Matrix3d rot  = 
+    Eigen::Quaterniond(odom.pose.pose.orientation.w, odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z).toRotationMatrix();
+    Eigen::Vector3d trans(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
+    pose.block<3, 3>(0, 0) = rot;
+    pose.block<3, 1>(0, 3) = trans;
+    pcl::transformPointCloud(*color_cloud, *transformed_cloud, pose);
+      // *map_ = *map_ + *transformed_cloud;
+
+    sensor_msgs::PointCloud2 tempCloud;
+    pcl::toROSMsg(*transformed_cloud, tempCloud);
+    tempCloud.header.stamp = ros::Time::now();
+    tempCloud.header.frame_id = "velodyne";
+    pub_cloud.publish(tempCloud);
+  }
+  m_buf.unlock();
+
+
 }
 
 void process() {
@@ -179,6 +220,9 @@ int main(int argc, char **argv) {
       n.subscribe("/d435/camera/color/image_raw", 2000, image_callback);
   ros::Subscriber velodyne_subscriber =
       n.subscribe("/velodyne_points", 2000, velodyne_callback);
+  ros::Subscriber odometry_subscriber =
+      n.subscribe("/lio_sam/mapping/odometry", 2000, odometry_callback);
+
   std::thread measurement_process{process};
   pub_image = n.advertise<sensor_msgs::Image>("/image_track", 1000);
   pub_cloud = n.advertise<sensor_msgs::PointCloud2>("/color_cloud", 10);
