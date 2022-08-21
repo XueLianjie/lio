@@ -16,12 +16,15 @@
 #include <tf_conversions/tf_eigen.h>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 
 #include <pcl/common/common.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/transforms.h>
+#include <pcl/filters/voxel_grid.h>
+
 #include <ctime>
 
 using namespace std;
@@ -32,56 +35,86 @@ queue<sensor_msgs::PointCloud2ConstPtr> velodyne_que;
 map<double, nav_msgs::Odometry> odometry_que;
 ros::Publisher pub_image;
 ros::Publisher pub_cloud;
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr map_(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg) {
+std::unordered_map<int, std::unordered_map<int, std::unordered_map<int, std::unordered_map<int, int>>>> filtered_map;
+double grid_x_size = 0.5;
+double grid_y_size = 0.5;
+double grid_z_size = 0.5;
+
+int CalculateIndex(double coordinate, const double grid_size) {
+  if (coordinate < 0) {
+    coordinate -= 1.0;
+  }
+  return  static_cast<int>(coordinate / grid_size);
+}
+
+bool SemanticFilter(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& transformed_cloud) {
+  for (const auto& point : transformed_cloud->points) {
+    int x = CalculateIndex(point.x, grid_x_size);
+    int y = CalculateIndex(point.y, grid_y_size);
+    int z = CalculateIndex(point.z, grid_z_size);
+    int label = point.r;
+    filtered_map[x][y][z][label]++;
+  }
+  return true;
+}
+
+cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
+{
   cv_bridge::CvImageConstPtr ptr;
   ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
   cv::Mat img = ptr->image.clone();
   return img;
 }
 
-void image_callback(const sensor_msgs::ImageConstPtr &image_msg) {
+void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
+{
   // ROS_INFO("received image_msg time: %f ", image_msg->header.stamp.toSec());
   m_buf.lock();
   image_que.push(image_msg);
   printf("image_que size: %d \n", image_que.size());
-  if (image_que.size() > 1000) {
+  if (image_que.size() > 1000)
+  {
     image_que.pop();
   }
   m_buf.unlock();
 }
 
-void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
+void velodyne_callback(const sensor_msgs::PointCloud2ConstPtr &velodyne_msg)
+{
   // ROS_INFO("received velodyne_msg time: %f ",
   //          velodyne_msg->header.stamp.toSec());
   m_buf.lock();
   velodyne_que.push(velodyne_msg);
   printf("velodyne_que size: %d \n", velodyne_que.size());
-  if (velodyne_que.size() > 1000) {
+  if (velodyne_que.size() > 1000)
+  {
     velodyne_que.pop();
   }
   m_buf.unlock();
 }
 
-void odometry_callback(const nav_msgs::Odometry::ConstPtr &odometry_msg) {
+void odometry_callback(const nav_msgs::Odometry::ConstPtr &odometry_msg)
+{
   m_buf.lock();
   ROS_INFO("received odometry_msg time: %f ",
            odometry_msg->header.stamp.toSec());
 
-  odometry_que.insert(std::make_pair(odometry_msg->header.stamp.toSec() ,*odometry_msg));
+  odometry_que.insert(std::make_pair(odometry_msg->header.stamp.toSec(), *odometry_msg));
   printf("odometry_que size: %d \n", odometry_que.size());
   // if (odometry_que.size() > 5000) {
   //   odometry_que.pop();
   // }
   m_buf.unlock();
-
 }
 
 void ProjectVelodynePointsToImage(
     const sensor_msgs::ImageConstPtr &image_msg,
-    const sensor_msgs::PointCloud2ConstPtr &velodyne_msg) {
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr velodyne_points(
-      new pcl::PointCloud<pcl::PointXYZRGB>());
+    const sensor_msgs::PointCloud2ConstPtr &velodyne_msg)
+{
+  pcl::PointCloud<pcl::PointXYZI>::Ptr velodyne_points(
+      new pcl::PointCloud<pcl::PointXYZI>());
   pcl::fromROSMsg(*velodyne_msg, *velodyne_points);
   cv::Mat projected_image = getImageFromMsg(image_msg);
 
@@ -90,7 +123,7 @@ void ProjectVelodynePointsToImage(
   K(1, 1) = 554.3826;
   K(0, 2) = 320.;
   K(1, 2) = 240.;
-  std::cout << "K \n" << K << std::endl;
+  // std::cout << "K \n" << K << std::endl;
 
   // Eigen::Matrix4d Tbl = Eigen::Matrix4d::Identity();
   // Tbl(2, 3) = 0.4;
@@ -101,22 +134,24 @@ void ProjectVelodynePointsToImage(
   Tbc(0, 3) = 1.121;
   Tbc(1, 3) = 0.167;
   Tbc(2, 3) = -0.018;
-  std::cout << "Tbc \n" << Tbc << std::endl;
+  // std::cout << "Tbc \n" << Tbc << std::endl;
 
   Eigen::Matrix4d Tcl = Tbc.inverse();
-  std::cout << "Tcl \n" << Tcl << std::endl;
+  // std::cout << "Tcl \n" << Tcl << std::endl;
 
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr color_cloud(
       new pcl::PointCloud<pcl::PointXYZRGB>());
 
-  for (const auto &point : velodyne_points->points) {
+  for (const auto &point : velodyne_points->points)
+  {
     Eigen::Vector4d point_in_lidar(point.x, point.y, point.z, 1.0);
     Eigen::Vector4d point_in_cam = Tcl * point_in_lidar;
     Eigen::Vector3d point_in_pixel = K * point_in_cam.head(3) / point_in_cam(2);
     int u = static_cast<int>(point_in_pixel(0));
     int v = static_cast<int>(point_in_pixel(1));
     if (point_in_cam(2) < 0 || u < 0 || u >= projected_image.cols || v < 0 ||
-        v >= projected_image.rows) {
+        v >= projected_image.rows)
+    {
       continue;
     }
     pcl::PointXYZRGB p;
@@ -136,54 +171,73 @@ void ProjectVelodynePointsToImage(
   pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
   Eigen::Matrix4d pose = Eigen::Matrix4d::Identity();
   m_buf.lock();
-  while (odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) == odometry_que.end()) {
+  while (odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) == odometry_que.end())
+  {
     m_buf.unlock();
     usleep(300);
   }
 
-  if (!odometry_que.empty() && odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) != odometry_que.end()) {
-    nav_msgs::Odometry odom = (odometry_que.upper_bound(velodyne_msg->header.stamp.toSec())->second);
-    Eigen::Matrix3d rot  = 
-    Eigen::Quaterniond(odom.pose.pose.orientation.w, odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z).toRotationMatrix();
+  if (!odometry_que.empty() && odometry_que.upper_bound(velodyne_msg->header.stamp.toSec()) != odometry_que.end())
+  {
+    auto odom_iter = odometry_que.upper_bound(velodyne_msg->header.stamp.toSec());
+    auto pre_odom = std::prev(odom_iter)->second;
+    nav_msgs::Odometry odom = (odom_iter->second);
+    if((velodyne_msg->header.stamp.toSec() - pre_odom.header.stamp.toSec()) < ( odom.header.stamp.toSec() - velodyne_msg->header.stamp.toSec())) {
+      odom = pre_odom;
+    }
+    printf("final pre odom %f \n current odom time stamp: %f \n", pre_odom.header.stamp.toSec(),
+           odom.header.stamp.toSec());
+    Eigen::Matrix3d rot =
+        Eigen::Quaterniond(odom.pose.pose.orientation.w, odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z).toRotationMatrix();
     Eigen::Vector3d trans(odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z);
     pose.block<3, 3>(0, 0) = rot;
     pose.block<3, 1>(0, 3) = trans;
     pcl::transformPointCloud(*color_cloud, *transformed_cloud, pose);
-      // *map_ = *map_ + *transformed_cloud;
+    *map_ = *map_ + *transformed_cloud;
+
+    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid_filter;
+    voxel_grid_filter.setLeafSize(0.2, 0.2, 0.2);
+    voxel_grid_filter.setInputCloud(map_);
+    voxel_grid_filter.filter(*map_);
 
     sensor_msgs::PointCloud2 tempCloud;
-    pcl::toROSMsg(*transformed_cloud, tempCloud);
+    pcl::toROSMsg(*map_, tempCloud);
     tempCloud.header.stamp = ros::Time::now();
     tempCloud.header.frame_id = "velodyne";
     pub_cloud.publish(tempCloud);
   }
   m_buf.unlock();
-
-
 }
 
-void process() {
-  while (true) {
-    while (!image_que.empty() && !velodyne_que.empty()) {
+void process()
+{
+  while (true)
+  {
+    while (!image_que.empty() && !velodyne_que.empty())
+    {
       m_buf.lock();
       while (!velodyne_que.empty() &&
              !(image_que.front()->header.stamp.toSec() <
-               velodyne_que.front()->header.stamp.toSec())) {
+               velodyne_que.front()->header.stamp.toSec()))
+      {
         velodyne_que.pop();
       }
-      if (velodyne_que.empty()) {
+      if (velodyne_que.empty())
+      {
         m_buf.unlock();
         break;
       }
 
       if (image_que.back()->header.stamp.toSec() <
-          velodyne_que.front()->header.stamp.toSec()) {
+          velodyne_que.front()->header.stamp.toSec())
+      {
         m_buf.unlock();
         break;
       }
       auto pre_image_ptr = image_que.front();
       while (image_que.front()->header.stamp.toSec() <
-             velodyne_que.front()->header.stamp.toSec()) {
+             velodyne_que.front()->header.stamp.toSec())
+      {
         pre_image_ptr = image_que.front();
         printf("pre_image_ptr time stamp: %f \n",
                pre_image_ptr->header.stamp.toSec());
@@ -202,20 +256,22 @@ void process() {
       if (next_image_ptr->header.stamp.toSec() -
               current_velodyne_points->header.stamp.toSec() >
           current_velodyne_points->header.stamp.toSec() -
-              pre_image_ptr->header.stamp.toSec()) {
+              pre_image_ptr->header.stamp.toSec())
+      {
         current_image = pre_image_ptr;
       }
+      printf("final current_image time stamp: %f \n",
+             current_image->header.stamp.toSec());
       ProjectVelodynePointsToImage(current_image, current_velodyne_points);
-
     }
     ros::Duration(0.01).sleep();
   }
-
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   ros::init(argc, argv, "image_projection_node"); // node name
-  ros::NodeHandle n("~"); // 指定子命名空间， launch中通过 ns =
+  ros::NodeHandle n("~");                         // 指定子命名空间， launch中通过 ns =
   ros::Subscriber image_subscriber =
       n.subscribe("/d435/camera/color/image_raw", 2000, image_callback);
   ros::Subscriber velodyne_subscriber =
