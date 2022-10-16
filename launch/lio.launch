@@ -1,0 +1,13 @@
+<launch>
+
+    <!-- <node pkg="package_name" type="executable_name" name="node_name" /> -->
+    <node name="imu_pub_node" pkg="lio" type="imu_pub_node" output="screen">
+        <param name="model_path" type="string" value="/home/xue/lio_ws/src/lio/house_model/house.txt" />
+    </node>
+
+
+    <node name="lio_node" pkg="lio" type="lio_node" output="screen"></node>
+    <!-- open gl 210 is for fixing melodic gpu driver bug -->
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log" args="-d $(find lio)/rviz/lio.rviz --opengl 210" />
+
+</launch>

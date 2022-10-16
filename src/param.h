@@ -15,7 +15,7 @@ class Param
 
     // time
     int imu_frequency = 200;
-    int cam_frequency = 30;
+    int cam_frequency = 20;
     double imu_timestep = 1. / imu_frequency;
     double cam_timestep = 1. / cam_frequency;
     double t_start = 0.;
